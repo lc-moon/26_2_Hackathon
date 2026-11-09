@@ -1,0 +1,694 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>서울 3D 골든타임 시뮬레이션</title>
+<style>
+  :root { --text:#fff; --sub:#b9c6e4; --accent:#ffd34d; --red:#ff3b3b; --blue:#4aa3ff; --ok:#4cd9a0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b1630; font-family: "Pretendard","Noto Sans KR",system-ui,sans-serif; color: var(--text); overflow: hidden; }
+  #map { position: absolute; inset: 0; }
+  .glass { background: rgba(8,16,36,.80); border: 1px solid rgba(255,255,255,.16); border-radius: 14px; backdrop-filter: blur(6px); }
+
+  /* 좌측 상단 제목 */
+  #hudTitle { position: absolute; top: 14px; left: 14px; padding: 10px 14px; z-index: 5; pointer-events: none; }
+  #hudTitle b { font-size: 17px; }
+  #hudTitle small { display: block; color: var(--sub); font-size: 12px; margin-top: 2px; }
+
+  /* 우측 상단: 기체별 실시간 좌표 */
+  #hudCoord { position: absolute; top: 14px; right: 14px; padding: 10px 12px; z-index: 5; width: 290px; pointer-events: none; }
+  #hudCoord .h { font-size: 12px; color: var(--accent); font-weight: 700; margin-bottom: 6px; }
+  #hudObjs { display: flex; flex-direction: column; gap: 8px; }
+  .blk { border-left: 4px solid #888; padding-left: 8px; }
+  .blk .nm { font-size: 13px; font-weight: 800; display: flex; align-items: center; gap: 6px; }
+  .blk .arr { display: inline-block; margin-left: auto; font-size: 16px; color: var(--accent); transition: transform .1s linear; }
+  .blk .ln { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: #dbe5ff; }
+  .blk .ln.l1 { color: #9affac; }
+  .blk .ln.l2 { color: #9acbff; }
+
+  /* 경고 배너 */
+  #alert { position: absolute; top: 92px; left: 50%; transform: translateX(-50%); z-index: 6; padding: 8px 18px; border-radius: 99px;
+           font-weight: 800; font-size: 16px; background: rgba(255,59,59,.92); display: none; pointer-events: none; white-space: nowrap; }
+  #alert.warn { background: rgba(255,170,0,.94); color: #2a1a00; }
+  #alert.ok { background: rgba(76,217,160,.95); color: #072a1d; }
+
+  /* 시나리오 A: 2D/3D 비교 카드 */
+  #cmp, #mission { position: absolute; left: 14px; top: 100px; z-index: 5; display: none; pointer-events: none; width: 250px; }
+  .cards { display: grid; gap: 8px; }
+  .card { padding: 10px 14px; border-left: 5px solid #666; }
+  .card h4 { margin: 0; font-size: 13px; color: var(--sub); }
+  .card .tm { font-family: ui-monospace, Consolas, monospace; font-size: 26px; font-weight: 800; }
+  .card .st { font-size: 12px; color: var(--sub); }
+  #card2d.on { border-left-color: var(--blue); } #card2d.on .tm { color: var(--blue); }
+  #card3d.on { border-left-color: var(--ok); } #card3d.on .tm { color: var(--ok); }
+  #floors { display: flex; flex-direction: column-reverse; gap: 2px; margin-top: 8px; padding: 8px; width: 120px; }
+  #floors div { height: 7px; border-radius: 2px; background: rgba(255,255,255,.14); }
+  #floors div.sw { background: var(--blue); }
+  #floors div.hit { background: var(--red); box-shadow: 0 0 8px var(--red); }
+  #floorsLabel { font-size: 11px; color: var(--sub); margin-top: 4px; }
+
+  /* 시나리오 B: 구조 진행 단계 */
+  #mission .glass { padding: 12px 14px; }
+  #mission h4 { margin: 0 0 6px; font-size: 13px; color: var(--sub); }
+  #mission .tm { font-family: ui-monospace, Consolas, monospace; font-size: 26px; font-weight: 800; color: var(--ok); }
+  #mission ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px; }
+  #mission li { font-size: 12.5px; padding: 5px 8px; border-radius: 8px; background: rgba(255,255,255,.07); color: #8fa0c4; }
+  #mission li.done { color: #c9f7e4; background: rgba(76,217,160,.16); }
+  #mission li.act { color: #1a2440; background: var(--accent); font-weight: 800; }
+
+  /* 기체 위 이름표 */
+  .lbl { pointer-events: none; padding: 4px 9px; border-radius: 9px; background: rgba(8,16,36,.9); border: 2px solid #fff; color: #fff; font-size: 12px; line-height: 1.35;
+         white-space: nowrap; text-align: center; transform: translateY(-14px); box-shadow: 0 2px 10px rgba(0,0,0,.5); }
+  .lbl b { display: block; font-size: 13px; }
+  .lbl small { color: #cfe0ff; }
+  .dst { pointer-events: none; padding: 2px 8px; border-radius: 99px; font-size: 12px; font-weight: 800; color: #1a2440; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,.45); }
+
+  /* 하단 자막 */
+  #caption { position: absolute; left: 50%; bottom: 86px; transform: translateX(-50%); width: min(780px, calc(100% - 28px)); z-index: 5; padding: 12px 18px; text-align: center; pointer-events: none; }
+  #capTitle { display: block; font-size: 20px; font-weight: 800; color: var(--accent); }
+  #capText { font-size: 14px; color: #e8eefc; }
+
+  /* 결과 요약 */
+  #final { position: absolute; inset: 0; z-index: 7; display: none; align-items: center; justify-content: center; background: rgba(5,10,24,.55); pointer-events: none; }
+  #final .box { padding: 26px 34px; text-align: center; max-width: 660px; }
+  #final .big { font-size: 38px; font-weight: 900; color: var(--accent); }
+  #final p { margin: 6px 0; color: #e8eefc; }
+  #final small { color: var(--sub); }
+
+  /* 컨트롤 */
+  #controls { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 8; display: flex; gap: 8px; align-items: center; padding: 8px 12px; width: min(820px, calc(100% - 28px)); }
+  #controls button { cursor: pointer; border: 1px solid rgba(255,255,255,.25); border-radius: 10px; padding: 7px 11px; background: #14284f; color: #fff; font-weight: 700; font-family: inherit; white-space: nowrap; }
+  #controls button:hover, #controls button.on { border-color: var(--accent); }
+  #controls button.on { background: var(--accent); color: #1a2440; }
+  #seek { flex: 1; accent-color: var(--accent); min-width: 60px; }
+  #tlabel { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--sub); min-width: 78px; text-align: right; }
+  body.rec #controls { display: none; }
+
+  /* 시작 화면 */
+  #start { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; gap: 14px; align-items: center; justify-content: center; background: rgba(5,10,24,.85); text-align: center; padding: 20px; }
+  #start h1 { margin: 0; font-size: 30px; } #start h1 span { color: var(--accent); }
+  #start p { margin: 0; color: var(--sub); max-width: 560px; }
+  .choose { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: min(640px, 100%); }
+  @media (max-width: 640px) { .choose { grid-template-columns: 1fr; } }
+  .choose button { cursor: pointer; border: 2px solid rgba(255,255,255,.25); border-radius: 14px; padding: 16px; background: #14284f; color: #fff; font-family: inherit; text-align: left; }
+  .choose button:hover { border-color: var(--accent); }
+  .choose b { display: block; font-size: 17px; color: var(--accent); margin-bottom: 4px; }
+  .choose span { font-size: 13px; color: var(--sub); }
+  #err { display: none; position: absolute; z-index: 30; left: 50%; top: 40%; transform: translateX(-50%); width: min(560px, 90%); padding: 18px; border-radius: 12px; background: #3a1010; border: 1px solid var(--red); text-align: center; font-size: 14px; }
+  .mark { position: absolute; right: 14px; bottom: 78px; z-index: 4; font-size: 11px; color: var(--sub); pointer-events: none; text-align: right; }
+  body.rec .mark { bottom: 14px; }
+  @media (max-width: 760px) { #hudCoord { width: 220px; } #cmp, #mission { top: 190px; width: 200px; } }
+</style>
+</head>
+<body>
+<div id="map"></div>
+
+<div id="hudTitle" class="glass"><b>🆘 서울 3D 골든타임 시뮬레이션</b><small id="subTitle">가상 시나리오 · 모든 수치는 가정값</small></div>
+
+<div id="hudCoord" class="glass">
+  <div class="h">📡 실시간 3축 좌표 · 방향 · 속도</div>
+  <div id="hudObjs"></div>
+</div>
+
+<div id="alert"></div>
+
+<!-- 시나리오 A -->
+<div id="cmp">
+  <div class="cards">
+    <div class="card glass" id="card2d"><h4>기존 2D GPS 방식</h4><div class="tm" id="tm2d">--:--</div><div class="st" id="st2d">-</div></div>
+    <div class="card glass" id="card3d"><h4>3D 초정밀 방식</h4><div class="tm" id="tm3d">--:--</div><div class="st" id="st3d">-</div></div>
+  </div>
+  <div id="floors" class="glass"></div>
+  <div id="floorsLabel">건물 층 (파랑: 수색한 층 / 빨강: 요구조자)</div>
+</div>
+
+<!-- 시나리오 B -->
+<div id="mission">
+  <div class="glass">
+    <h4>구조 진행 상황 (가정 시간)</h4>
+    <div class="tm" id="tmM">T+ 00:00</div>
+    <ol>
+      <li id="m1">💥 ① 충돌 감지 · 기동 불가</li>
+      <li id="m2">📡 ② 3D 좌표 자동 전송</li>
+      <li id="m3">🚑 ③ 구조 비행차량 출동</li>
+      <li id="m4">🔗 ④ 상부 접근 · 도킹</li>
+      <li id="m5">🛬 ⑤ 안전 착륙 완료</li>
+    </ol>
+  </div>
+</div>
+
+<div id="caption" class="glass"><span id="capTitle"></span><span id="capText"></span></div>
+
+<div id="final">
+  <div class="box glass">
+    <div class="big" id="finalBig">-</div>
+    <p id="finalP1">-</p>
+    <p id="finalP2">-</p>
+    <small id="finalNote">-</small>
+  </div>
+</div>
+
+<div id="controls" class="glass">
+  <button id="playBtn">▶</button>
+  <button id="restartBtn">↺</button>
+  <button id="scA" class="on" title="외벽에 걸림">A 외벽</button>
+  <button id="scB" title="공중 추돌과 구조">B 추돌·구조</button>
+  <input type="range" id="seek" min="0" max="50" step="0.05" value="0">
+  <span id="tlabel">0:00 / 0:50</span>
+  <button id="recBtn" title="컨트롤을 숨기고 처음부터 재생합니다. Esc로 복귀">🎬 녹화</button>
+</div>
+
+<div class="mark">지도 © OpenFreeMap · © OpenMapTiles · 데이터 © OpenStreetMap contributors</div>
+
+<div id="start">
+  <h1>서울 <span>3D 골든타임</span></h1>
+  <p>서울 도심 상공의 사고 상황에서, 3차원(X·Y·Z) 위치 정보가 구조를 어떻게 바꾸는지 보여 주는 시뮬레이션입니다. 시나리오를 선택하세요.</p>
+  <div class="choose">
+    <button id="pickA"><b>A · 건물 외벽에 걸림 (50초)</b><span>비행차량이 이상으로 추락해 고층 건물 외벽에 걸림. 2D GPS와 3D 좌표의 수색 시간을 비교합니다.</span></button>
+    <button id="pickB"><b>B · 공중 추돌과 구조 (54초)</b><span>두 대가 가볍게 추돌해 기동 불가(추락 없음). 구조 비행차량이 출동해 도킹하고 안전 착륙지로 이송합니다.</span></button>
+  </div>
+  <p style="font-size:12px">영상 파일이 필요하면 시작 후 🎬 녹화를 누르고 화면 녹화(Windows: Win+G)를 사용하세요.</p>
+</div>
+
+<div id="err"></div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  // ===== MapLibre GL JS 4.7.1 불러오기 (한 곳이 막히면 다음 주소로 재시도) =====
+  const SRC = [
+    { js: "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js", css: "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" },
+    { js: "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.js", css: "https://cdn.jsdelivr.net/npm/maplibre-gl@4.7.1/dist/maplibre-gl.css" }
+  ];
+  function showErr(msg) { const e = $("err"); e.style.display = "block"; e.innerHTML = msg; }
+  function loadLib(i) {
+    if (i >= SRC.length) { showErr("지도 라이브러리를 불러오지 못했습니다. 인터넷 연결을 확인해 주세요."); return; }
+    const css = document.createElement("link"); css.rel = "stylesheet"; css.href = SRC[i].css; document.head.appendChild(css);
+    const s = document.createElement("script"); s.src = SRC[i].js;
+    s.onload = () => (window.maplibregl ? main() : loadLib(i + 1));
+    s.onerror = () => loadLib(i + 1);
+    document.head.appendChild(s);
+  }
+  loadLib(0);
+
+  function main() {
+    // ===== 공통 상수·보조 함수 =====
+    const mLat = 1 / 111320, mLon = 1 / (111320 * Math.cos(37.566 * Math.PI / 180));
+    const GROUND = 25;                                    // 지면 해발고도 가정(m)
+    const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+    const lerp = (a, b, u) => a + (b - a) * u;
+    const smooth = (u) => u * u * (3 - 2 * u);
+    const fmt = (sec) => { sec = Math.round(sec); return String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0"); };
+    const mixP = (a, b, u) => ({ lon: lerp(a.lon, b.lon, u), lat: lerp(a.lat, b.lat, u), alt: lerp(a.alt || 0, b.alt || 0, u) });
+    const shift = (p, de, dn) => ({ lon: p.lon + de * mLon, lat: p.lat + dn * mLat });      // 동쪽/북쪽으로 미터 이동
+    const sq = (lon, lat, hm) => { const dx = hm * mLon, dy = hm * mLat; return [[[lon - dx, lat - dy], [lon + dx, lat - dy], [lon + dx, lat + dy], [lon - dx, lat + dy], [lon - dx, lat - dy]]]; };
+    const circ = (lon, lat, r, n = 56) => { const p = []; for (let i = 0; i <= n; i++) { const a = i / n * 2 * Math.PI; p.push([lon + Math.cos(a) * r * mLon, lat + Math.sin(a) * r * mLat]); } return [p]; };
+    // 진행 방향(hdg, 북쪽 0°·시계방향)을 가리키는 화살표 모양 폴리곤
+    const chev = (lon, lat, hdg, L, W) => {
+      const h = hdg * Math.PI / 180, c = Math.cos(h), s = Math.sin(h);
+      const pts = [[0, 0.6 * L], [W / 2, -0.4 * L], [0, -0.15 * L], [-W / 2, -0.4 * L], [0, 0.6 * L]];
+      return [pts.map(([x, y]) => [lon + (x * c + y * s) * mLon, lat + (-x * s + y * c) * mLat])];
+    };
+    // 로컬 좌표(x: 오른쪽, y: 앞쪽, 미터)를 진행 방향으로 회전시킨 직사각형 폴리곤
+    const rectL = (lon, lat, hdg, x0, y0, hw, hl) => {
+      const h = hdg * Math.PI / 180, c = Math.cos(h), s = Math.sin(h);
+      const pts = [[x0 - hw, y0 - hl], [x0 + hw, y0 - hl], [x0 + hw, y0 + hl], [x0 - hw, y0 + hl], [x0 - hw, y0 - hl]];
+      return [pts.map(([x, y]) => [lon + (x * c + y * s) * mLon, lat + (-x * s + y * c) * mLat])];
+    };
+    const poly = (coords, props) => ({ type: "Feature", properties: props, geometry: { type: "Polygon", coordinates: coords } });
+    // 각진 블록을 조립한 비행차량: 차체 + 캐빈 + 노란 앞머리(진행 방향) + 팔과 프로펠러 패드 4개
+    const blocks = (out, p, hdg, o, col, t) => {
+      const L = o.len, W = o.wid, th = o.thick, a = p.alt;
+      const add = (x0, y0, hw, hl, b, h, color, op = 0.98) => out.push(poly(rectL(p.lon, p.lat, hdg, x0, y0, hw, hl), { color, b, h, op }));
+      add(0, 0, W * 0.3, L * 0.5, a - th * 0.4, a + th * 0.1, col);                                  // 차체
+      add(0, -L * 0.05, W * 0.22, L * 0.22, a + th * 0.1, a + th * 0.65, o.siren ? "#ffffff" : "#dff3ff"); // 캐빈
+      add(0, L * 0.5, W * 0.18, L * 0.07, a - th * 0.4, a + th * 0.3, "#ffd34d");                    // 앞머리
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        add(sx * W * 0.4, sy * L * 0.33, W * 0.1, L * 0.035, a - th * 0.15, a + th * 0.1, col);      // 팔
+        add(sx * W * 0.5, sy * L * 0.33, W * 0.17, W * 0.17, a + th * 0.1, a + th * 0.25, "#1b2338"); // 프로펠러 패드
+      }
+      if (o.siren) {                                                                                // 구조차: 지붕 십자와 경광등
+        const top = a + th * 0.65, on = Math.floor(t * 4) % 2;
+        add(0, -L * 0.05, W * 0.05, L * 0.16, top, top + 1, "#ff3b3b");
+        add(0, -L * 0.05, W * 0.16, L * 0.05, top, top + 1, "#ff3b3b");
+        add(-W * 0.18, -L * 0.18, W * 0.05, W * 0.05, top, top + th * 0.4, on ? "#ff3b3b" : "#3b8bff");
+        add(W * 0.18, -L * 0.18, W * 0.05, W * 0.05, top, top + th * 0.4, on ? "#3b8bff" : "#ff3b3b");
+      }
+    };
+    const line = (coords, props) => ({ type: "Feature", properties: props, geometry: { type: "LineString", coordinates: coords } });
+    const fc = (features) => ({ type: "FeatureCollection", features });
+    const compass = (h) => ["북", "북동", "동", "남동", "남", "남서", "서", "북서"][Math.round(h / 45) % 8];
+
+    // ================================================================
+    //  시나리오 A: 고층 건물 외벽에 걸림 (50초)
+    // ================================================================
+    const TOWER = { lon: 126.9800, lat: 37.5665, half: 22, h: 110 };      // 사고 건물(가상)
+    const FLOOR_H = 3.5, FLOORS_TOTAL = Math.floor(TOWER.h / FLOOR_H);
+    const STUCK_ALT = 96, FLOOR_HIT = Math.round(STUCK_ALT / FLOOR_H);
+    const SEC_PER_FLOOR = 120, T3D = 180;                                  // 가정: 층당 2분, 3D 접근 3분
+    const PA0 = { lon: 126.9690, lat: 37.5636, alt: 220 };
+    const PA1 = { lon: 126.9772, lat: 37.5656, alt: 200 };
+    const PA2 = { ...shift(TOWER, -(TOWER.half + 57), 0), alt: STUCK_ALT };   // 건물 서쪽 외벽에 앞머리가 닿는 위치
+    const STA = { lon: 126.9735, lat: 37.5598 };                           // 구조 거점(가상)
+    const DESTA = { lon: 126.9860, lat: 37.5678 };                         // 원래 목적지(가상)
+
+    function posAM(t) {                                                    // 비행차량
+      if (t < 12) { const u = t / 12; return { lon: lerp(PA0.lon, PA1.lon, u), lat: lerp(PA0.lat, PA1.lat, u), alt: lerp(PA0.alt, PA1.alt, u) }; }
+      if (t < 14) return { lon: PA1.lon + Math.sin((t - 12) * 18) * 0.00002, lat: PA1.lat, alt: PA1.alt + Math.sin((t - 12) * 12) * 4 };
+      if (t < 21) {
+        const u = (t - 14) / 7, w = Math.sin(u * 30) * 0.00001 * (1 - u);
+        return { lon: lerp(PA1.lon, PA2.lon, smooth(u)) + w, lat: lerp(PA1.lat, PA2.lat, smooth(u)), alt: lerp(PA1.alt, PA2.alt, u * u) };
+      }
+      return { ...PA2 };
+    }
+    function posAR(t) {                                                    // 구조 드론
+      if (t < 34) return null;
+      const u = smooth(clamp((t - 34) / 10, 0, 1)), tgt = shift(PA2, 0, 90);
+      return { lon: lerp(STA.lon, tgt.lon, u), lat: lerp(STA.lat, tgt.lat, u), alt: lerp(15, STUCK_ALT, u) };
+    }
+    const sweepN = (t) => (t >= 24 && t < 34 ? Math.max(1, Math.ceil(clamp((t - 24) / 10, 0, 1) * FLOOR_HIT)) : 0);
+
+    const SA = {
+      key: "A", T: 50, sub: "시나리오 A · 건물 외벽에 걸림",
+      objs: [
+        { id: "m", name: "비행차량", base: "#38d6ff", len: 100, wid: 70, thick: 24, hdg0: 70, pos: posAM,
+          color: (t) => (t < 12 ? "#38d6ff" : t < 14 ? (Math.floor(t * 6) % 2 ? "#ffffff" : "#ff3b3b") : "#ff3b3b"),
+          status: (t) => (t < 12 ? "정상 비행" : t < 14 ? "이상 감지" : t < 21 ? "추락 중" : "외벽에 걸림") },
+        { id: "r", name: "구조 드론", base: "#4cd9a0", len: 90, wid: 64, thick: 20, hdg0: 60, pos: posAR, siren: true,
+          color: () => "#4cd9a0", status: (t) => (t < 44 ? "3D 좌표로 직행" : "접근 완료") }
+      ],
+      dests: [
+        { lon: DESTA.lon, lat: DESTA.lat, text: "◎ 원래 목적지", color: "#7cc0ff", show: (t) => t < 21 },
+        { lon: STA.lon, lat: STA.lat, text: "🚁 구조 거점", color: "#4cd9a0", show: (t) => t >= 30 }
+      ],
+      routes: [
+        { color: "#7cc0ff", dash: 1, w: 3, coords: (t) => (t < 21 ? [[PA0.lon, PA0.lat], [DESTA.lon, DESTA.lat]] : null) },
+        { color: "#4cd9a0", dash: 0, w: 4, coords: (t) => { const d = posAR(t); return d ? [[STA.lon, STA.lat], [d.lon, d.lat]] : null; } }
+      ],
+      KF: [
+        { t: 0,  c: [126.9779, 37.5640], z: 14.8, b: -30, p: 55, f: 0 },
+        { t: 3,  c: [126.9779, 37.5640], z: 15.4, b: -10, p: 60, f: 1 },
+        { t: 12, c: [126.9779, 37.5640], z: 16.0, b: 35,  p: 64, f: 1 },
+        { t: 14, c: [126.9779, 37.5640], z: 16.3, b: 40,  p: 66, f: 1 },
+        { t: 21, c: [126.9779, 37.5640], z: 17.0, b: 75,  p: 68, f: 1 },
+        { t: 24, c: [126.9779, 37.5640], z: 17.4, b: 115, p: 68, f: 1 },
+        { t: 34, c: [126.9779, 37.5640], z: 16.7, b: 150, p: 64, f: 1 },
+        { t: 44, c: [126.9780, 37.5648], z: 15.5, b: 200, p: 56, f: 0 },
+        { t: 50, c: [126.9780, 37.5648], z: 15.2, b: 230, p: 54, f: 0 }
+      ],
+      focus(t) {                                                           // 카메라가 따라갈 지점(경위도+고도)
+        const m = posAM(t), tw = { lon: TOWER.lon, lat: TOWER.lat, alt: 50 };
+        if (t < 21) return m;
+        if (t < 24) return mixP(m, tw, smooth((t - 21) / 3));
+        return tw;
+      },
+      scenes: [
+        [0,  "서울 도심", "서울 한복판 상공을 나는 미래 모빌리티. 모든 기체는 X·Y·Z 3축 좌표를 실시간으로 공유합니다."],
+        [5,  "정상 비행", "고도 약 200m로 목적지(◎)를 향해 북동쪽으로 이동 중입니다. 3D 좌표가 1초 단위로 갱신됩니다."],
+        [12, "이상 감지", "기체 이상을 감지하면 구조 시스템이 자동으로 3D 좌표 전송을 시작합니다."],
+        [14, "추락", "추락하는 동안에도 위도·경도·고도를 실시간으로 전달합니다. 2D GPS는 지상 위치(파란 원)만 보여 줍니다."],
+        [21, "건물 외벽에 걸림", "빌딩 숲에서는 지상 위치만으로는 몇 층에 있는지 알 수 없습니다."],
+        [24, "기존 2D GPS 방식", "지상 위치만 알기 때문에 건물 전체를 층별로 수색합니다. (가정: 층당 2분)"],
+        [34, "3D 초정밀 방식", "고도(Z)까지 알기 때문에 " + FLOOR_HIT + "층으로 곧바로 접근합니다."],
+        [44, "골든타임 확보", "정확한 3차원 위치가 수색 시간을 줄입니다."]
+      ],
+      alert(t) {
+        if (t >= 12 && t < 14) return ["warn", "⚠ 이상 감지 · 3D 좌표 자동 전송 시작"];
+        if (t >= 14 && t < 21) return ["", "🔴 추락 중 · 3D 좌표 실시간 전송"];
+        if (t >= 21 && t < 24) return ["", "🟠 건물 외벽에 걸림 · 3D 좌표 확정"];
+        return null;
+      },
+      extra(t, F) {                                                        // 시나리오 전용 도형
+        const m = posAM(t);
+        if (t >= 14) {                                                     // 2D GPS가 보여 주는 지상 위치와 오차 반경
+          F.g2d.push(poly(circ(m.lon, m.lat, 30), { color: "#4aa3ff", op: 0.22, lc: "#4aa3ff", lw: 2 }));
+          F.g2d.push(poly(circ(m.lon, m.lat, 5), { color: "#1d8bff", op: 0.95, lc: "#ffffff", lw: 1 }));
+        }
+        const foot = sq(TOWER.lon, TOWER.lat, TOWER.half + 0.8), n = sweepN(t);
+        if (n > 0) F.slab.push(poly(foot, { color: "#4aa3ff", b: (n - 1) * FLOOR_H, h: n * FLOOR_H, op: 0.95 }));       // 2D: 층별 수색
+        else if (t >= 34) F.slab.push(poly(foot, { color: "#ff3b3b", b: (FLOOR_HIT - 1) * FLOOR_H, h: FLOOR_HIT * FLOOR_H, op: 0.95 })); // 3D: 해당 층
+      },
+      ui(t) {
+        $("cmp").style.display = t >= 24 ? "block" : "none";
+        if (t < 24) return;
+        const p2 = clamp((t - 24) / 10, 0, 1), n = sweepN(t);
+        $("tm2d").textContent = fmt(p2 * FLOOR_HIT * SEC_PER_FLOOR);
+        $("st2d").textContent = t < 34 ? "건물 전체를 층별 수색 중 (" + n + "층)" : FLOOR_HIT + "층에서 발견 (가정)";
+        $("card2d").classList.add("on");
+        const p3 = clamp((t - 34) / 10, 0, 1);
+        $("tm3d").textContent = t < 34 ? "--:--" : fmt(p3 * T3D);
+        $("st3d").textContent = t < 34 ? "대기 중" : (p3 < 1 ? FLOOR_HIT + "층으로 직행 중" : FLOOR_HIT + "층 접근 완료 (가정)");
+        $("card3d").classList.toggle("on", t >= 34);
+        cells.forEach((el, i) => { const k = i + 1; el.className = t < 34 ? (k <= n ? "sw" : "") : (k === FLOOR_HIT ? "hit" : ""); });
+      },
+      final(t) {
+        if (t < 44) return null;
+        const speed = (FLOOR_HIT * SEC_PER_FLOOR) / T3D, vol2D = Math.PI * 15 * 15 * STUCK_ALT, vol3D = (4 / 3) * Math.PI * 3 * 3 * 5;
+        return { big: "수색 시간 약 " + Math.round(speed) + "배 단축", p1: "2D GPS " + fmt(FLOOR_HIT * SEC_PER_FLOOR) + " → 3D 초정밀 " + fmt(T3D) + " (가정)",
+                 p2: "수색해야 할 공간은 약 " + Math.round(vol2D / vol3D) + "배 좁아집니다.",
+                 note: "※ 가정: 층당 수색 2분, 3D 좌표 접근 3분, 정확도 ±3m(수평)·±5m(수직)" };
+      }
+    };
+
+    // ================================================================
+    //  시나리오 B: 공중 추돌(추락 없음) → 구조 비행차량 출동 (54초)
+    // ================================================================
+    const C = { lon: 126.9772, lat: 37.5662 };                             // 충돌 지점
+    const A0 = { lon: 126.9690, lat: 37.5662 };                            // 비행차량 A 출발(서쪽, 동쪽으로 이동)
+    const B0 = { lon: 126.9772, lat: 37.5595 };                            // 비행차량 B 출발(남쪽, 북쪽으로 이동)
+    const AE = shift(C, -30, 0), BE = shift(C, 0, -30);                    // 추돌 후 정지 위치(기체가 커서 간격을 넓힘)
+    const MB = shift(C, -15, -15);                                         // 두 기체의 중간 지점(구조차 도킹 위치)
+    const SB = { lon: 126.9830, lat: 37.5600 };                            // 구조 거점(가상)
+    const LB = { lon: 126.9700, lat: 37.5710 };                            // 안전 착륙지(가상)
+    const DA = { lon: 126.9850, lat: 37.5662 }, DB = { lon: 126.9772, lat: 37.5740 };   // A, B의 원래 목적지
+    const TETHER = 33;                                                     // 견인 줄 길이(m)
+
+    function posBR(t) {                                                    // 구조 비행차량
+      if (t < 16) return null;
+      if (t < 17) return { lon: SB.lon, lat: SB.lat, alt: 2 };
+      if (t < 30) { const u = smooth((t - 17) / 13), al = lerp(2, 180, smooth(clamp((t - 17) / 8, 0, 1))); return { lon: lerp(SB.lon, MB.lon, u), lat: lerp(SB.lat, MB.lat, u), alt: al }; }
+      if (t < 34) return { lon: MB.lon, lat: MB.lat, alt: 180 + Math.sin((t - 30) * Math.PI) * 1.2 };
+      if (t < 46) { const u = smooth((t - 34) / 12); return { lon: lerp(MB.lon, LB.lon, u), lat: lerp(MB.lat, LB.lat, u), alt: lerp(180, 40, u) }; }
+      if (t < 50) { const u = smooth((t - 46) / 4); return { lon: LB.lon, lat: LB.lat, alt: lerp(40, 33, u) }; }
+      return { lon: LB.lon, lat: LB.lat, alt: 33 };
+    }
+    function posBA(t) {                                                    // 비행차량 A (동쪽으로 이동 → 추돌 → 정지 → 견인)
+      if (t >= 30) { const r = posBR(t), p = shift(r, -15, 15); return { ...p, alt: r.alt - TETHER }; }
+      if (t < 12) { const u = t / 12; return { lon: lerp(A0.lon, AE.lon, u), lat: lerp(A0.lat, AE.lat, u), alt: 150 }; }
+      const sag = lerp(150, 147, smooth(clamp((t - 12) / 3, 0, 1)));
+      const shake = t < 13.2 ? Math.sin(t * 50) * 1.5 * (1 - (t - 12) / 1.2) : 0;   // 추돌 순간 상하 흔들림
+      return { lon: AE.lon, lat: AE.lat, alt: sag + shake + (t > 13.2 ? Math.sin((t - 13) * 1.5) * 0.5 : 0) };
+    }
+    function posBB(t) {                                                    // 비행차량 B (북쪽으로 이동)
+      if (t >= 30) { const r = posBR(t), p = shift(r, 15, -15); return { ...p, alt: r.alt - (TETHER - 6) }; }   // B는 A보다 6m 높게 매달림
+      if (t < 12) { const u = t / 12; return { lon: B0.lon, lat: lerp(B0.lat, BE.lat, u), alt: 156 }; }          // B는 A보다 6m 높게 비행(겹침 방지)
+      const sag = lerp(156, 153, smooth(clamp((t - 12) / 3, 0, 1)));
+      const shake = t < 13.2 ? Math.sin(t * 47) * 1.5 * (1 - (t - 12) / 1.2) : 0;
+      return { lon: BE.lon, lat: BE.lat, alt: sag + shake + (t > 13.2 ? Math.sin((t - 13) * 1.3 + 1) * 0.5 : 0) };
+    }
+    const mTime = (t) => {                                                 // 영상 시간 → 가정한 구조 경과 시간(초)
+      const K = [[13, 0], [17, 60], [30, 300], [34, 360], [46, 720], [50, 840]];
+      if (t <= K[0][0]) return 0;
+      for (let i = 0; i < K.length - 1; i++) if (t <= K[i + 1][0]) return lerp(K[i][1], K[i + 1][1], (t - K[i][0]) / (K[i + 1][0] - K[i][0]));
+      return K[K.length - 1][1];
+    };
+
+    const stB = (t) => (t < 12 ? "정상 비행" : t < 30 ? "기동 불가 · 체공 중" : t < 34 ? "도킹 연결" : t < 50 ? "견인 이송 중" : "안전 착륙");
+    const colB = (own) => (t) => (t >= 12 && t < 30 ? (Math.floor(t * 3) % 2 ? "#ff3b3b" : own) : own);
+
+    const SB_ = {
+      key: "B", T: 54, sub: "시나리오 B · 공중 추돌과 구조 비행차량",
+      objs: [
+        { id: "a", name: "비행차량 A", base: "#7cc0ff", len: 100, wid: 70, thick: 24, hdg0: 90, pos: posBA, color: colB("#7cc0ff"), status: stB },
+        { id: "b", name: "비행차량 B", base: "#c792ff", len: 100, wid: 70, thick: 24, hdg0: 0,  pos: posBB, color: colB("#c792ff"), status: stB },
+        { id: "r", name: "구조 비행차량", base: "#4cd9a0", len: 140, wid: 100, thick: 30, hdg0: 315, pos: posBR, siren: true, color: () => "#4cd9a0",
+          status: (t) => (t < 30 ? "3D 좌표로 출동 중" : t < 34 ? "도킹 중" : t < 50 ? "두 기체 견인 이송" : "착륙 완료") }
+      ],
+      dests: [
+        { lon: DA.lon, lat: DA.lat, text: "◎ A 목적지", color: "#7cc0ff", show: (t) => t < 13 },
+        { lon: DB.lon, lat: DB.lat, text: "◎ B 목적지", color: "#c792ff", show: (t) => t < 13 },
+        { lon: SB.lon, lat: SB.lat, text: "🚁 구조 거점", color: "#4cd9a0", show: () => true },
+        { lon: LB.lon, lat: LB.lat, text: "🅷 안전 착륙지", color: "#ffd34d", show: (t) => t >= 14 }
+      ],
+      routes: [
+        { color: "#7cc0ff", dash: 1, w: 3, coords: (t) => (t < 13 ? [[A0.lon, A0.lat], [DA.lon, DA.lat]] : null) },
+        { color: "#c792ff", dash: 1, w: 3, coords: (t) => (t < 13 ? [[B0.lon, B0.lat], [DB.lon, DB.lat]] : null) },
+        { color: "#4cd9a0", dash: 1, w: 4, coords: (t) => (t >= 16 && t < 34 ? [[SB.lon, SB.lat], [MB.lon, MB.lat]] : null) },
+        { color: "#ffd34d", dash: 1, w: 4, coords: (t) => (t >= 30 && t < 50 ? [[MB.lon, MB.lat], [LB.lon, LB.lat]] : null) }
+      ],
+      KF: [
+        { t: 0,  c: [126.9772, 37.5640], z: 14.6, b: -20, p: 55, f: 0 },
+        { t: 3,  c: [126.9772, 37.5640], z: 15.4, b: -5,  p: 60, f: 1 },
+        { t: 12, c: [126.9772, 37.5640], z: 16.9, b: 45,  p: 64, f: 1 },
+        { t: 14, c: [126.9772, 37.5640], z: 17.2, b: 80,  p: 66, f: 1 },
+        { t: 17, c: [126.9772, 37.5640], z: 16.0, b: 110, p: 62, f: 1 },
+        { t: 28, c: [126.9772, 37.5640], z: 17.0, b: 150, p: 64, f: 1 },
+        { t: 34, c: [126.9772, 37.5640], z: 17.6, b: 190, p: 66, f: 1 },
+        { t: 44, c: [126.9772, 37.5640], z: 16.2, b: 230, p: 62, f: 1 },
+        { t: 48, c: [126.9772, 37.5640], z: 17.2, b: 260, p: 64, f: 1 },
+        { t: 54, c: [126.9772, 37.5640], z: 16.6, b: 290, p: 58, f: 1 }
+      ],
+      focus(t) {
+        const a = posBA(t), b = posBB(t), r = posBR(t), ab = mixP(a, b, 0.5);
+        if (!r || t < 16) return ab;
+        const mid = mixP(r, ab, 0.5);
+        if (t < 20) return mixP(ab, mid, smooth((t - 16) / 4));
+        if (t < 28) return mid;
+        if (t < 32) return mixP(mid, r, smooth((t - 28) / 4));
+        return r;
+      },
+      scenes: [
+        [0,  "서울 도심 상공 항로", "두 대의 비행차량이 교차하는 항로로 접근합니다. 점선은 각 기체의 예정 경로, ◎는 목적지입니다."],
+        [8,  "교차 항로 접근", "같은 고도(약 150m)에서 서로 직각으로 접근합니다. 노란 앞머리 블록이 진행 방향입니다."],
+        [12, "공중 추돌", "가벼운 추돌로 추락은 하지 않지만, 두 기체 모두 기동이 불가능한 상태입니다. 3D 좌표가 자동 전송됩니다."],
+        [17, "구조 비행차량 출동", "두 기체의 정확한 3D 좌표(고도 Z 포함)를 받아 구조 거점에서 바로 출동합니다."],
+        [22, "상부 접근", "고도를 알기 때문에 두 기체의 위쪽에서 안전하게 접근합니다. 2D 위치만으로는 2차 충돌 위험이 있습니다."],
+        [30, "도킹 · 견인", "구조 비행차량이 두 기체를 연결해 함께 이동할 준비를 합니다."],
+        [34, "안전 착륙지로 이송", "세 기체가 함께 이동하며 천천히 고도를 낮춥니다."],
+        [48, "안전 착륙", "두 기체 모두 안전하게 착륙지에 내려앉습니다."],
+        [50, "구조 완료", "추락 없이, 2차 사고 없이 구조를 마쳤습니다."]
+      ],
+      alert(t) {
+        if (t >= 12 && t < 14) return ["", "💥 공중 추돌 · 두 기체 기동 불가 (추락 없음)"];
+        if (t >= 14 && t < 17) return ["warn", "📡 3D 좌표 자동 전송 · 구조 요청 접수"];
+        if (t >= 17 && t < 30) return ["ok", "🚑 구조 비행차량 출동 중"];
+        if (t >= 30 && t < 34) return ["ok", "🔗 도킹 · 견인 연결"];
+        if (t >= 34 && t < 48) return ["ok", "🛬 안전 착륙지로 이송 중"];
+        if (t >= 48) return ["ok", "✅ 안전 착륙 완료"];
+        return null;
+      },
+      extra(t, F) {
+        if (t >= 12) {                                                     // 2D GPS는 고도 없이 한 점만 보여 줌
+          F.g2d.push(poly(circ(C.lon, C.lat, 45), { color: "#4aa3ff", op: 0.18, lc: "#4aa3ff", lw: 2 }));
+          F.g2d.push(poly(circ(C.lon, C.lat, 5), { color: "#1d8bff", op: 0.95, lc: "#ffffff", lw: 1 }));
+        }
+        if (t >= 12 && t < 13.6) {                                         // 충돌 섬광(반투명)
+          const u = (t - 12) / 1.6, half = lerp(20, 100, u);
+          F.soft.push(poly(sq(C.lon, C.lat, half), { color: "#fff3b0", b: 152 - half, h: 152 + half }));
+        }
+        if (t >= 30) {                                                     // 견인 줄: 두 기체에서 구조차까지 수직 연결
+          const r = posBR(t);
+          [posBA(t), posBB(t)].forEach((p) => F.craft.push(poly(sq(p.lon, p.lat, 2.5), { color: "#9fffd5", b: p.alt + 18, h: r.alt - 10 })));
+        }
+      },
+      ui(t) {
+        $("mission").style.display = t >= 12 ? "block" : "none";
+        if (t < 12) return;
+        $("tmM").textContent = "T+ " + fmt(mTime(t));
+        const th = [12, 13.5, 17, 30, 50], ids = ["m1", "m2", "m3", "m4", "m5"];
+        let last = -1; th.forEach((x, i) => { if (t >= x) last = i; });
+        ids.forEach((id, i) => { $(id).className = i < last ? "done" : (i === last ? (i === 4 ? "done" : "act") : ""); });
+      },
+      final(t) {
+        if (t < 50) return null;
+        return { big: "2차 사고 없이 안전 구조", p1: "충돌 후 착륙까지 약 " + fmt(840) + " (가정)",
+                 p2: "두 기체의 3D 좌표(고도 포함)를 알아 위에서 안전하게 접근하고 견인했습니다.",
+                 note: "※ 가정: 출동·접근 5분, 도킹 1분, 이송·착륙 8분, 정확도 ±3m(수평)·±5m(수직)" };
+      }
+    };
+    const SCS = { A: SA, B: SB_ };
+
+    // ===== 지도 만들기 =====
+    const map = new maplibregl.Map({
+      container: "map", style: "https://tiles.openfreemap.org/styles/liberty",
+      center: [126.9779, 37.5640], zoom: 14.8, pitch: 55, bearing: -30, maxPitch: 80, interactive: false, antialias: true
+    });
+    let ready = false, playing = false, t = 0, last = 0, dirty = true, cur = null, pendingKey = null, S = null;
+    let markers = [];                                                       // 현재 시나리오의 HTML 마커들
+
+    // 층 표시 칸(시나리오 A용)
+    for (let i = 1; i <= FLOORS_TOTAL; i++) $("floors").appendChild(document.createElement("div"));
+    const cells = Array.from($("floors").children);
+
+    map.on("load", () => {
+      const style = map.getStyle();
+      const firstExt = style.layers.find((l) => l.type === "fill-extrusion");
+      if (!firstExt) {                                                      // 스타일에 3D 건물이 없으면 직접 추가
+        const vs = Object.entries(style.sources).find(([k, v]) => v.type === "vector");
+        if (vs) map.addLayer({ id: "my-bldg", type: "fill-extrusion", source: vs[0], "source-layer": "building", minzoom: 14,
+          paint: { "fill-extrusion-color": "#cfd6e4", "fill-extrusion-opacity": 0.8,
+                   "fill-extrusion-height": ["coalesce", ["get", "render_height"], 12], "fill-extrusion-base": ["coalesce", ["get", "render_min_height"], 0] } });
+      }
+      const before = firstExt ? firstExt.id : (map.getLayer("my-bldg") ? "my-bldg" : undefined);
+
+      // 땅 위 표시(2D 범위, 지상 그림자, 경로)는 건물보다 아래에 그림
+      map.addSource("g2d", { type: "geojson", data: fc([]) });
+      map.addLayer({ id: "g2d-fill", type: "fill", source: "g2d", paint: { "fill-color": ["get", "color"], "fill-opacity": ["get", "op"] } }, before);
+      map.addLayer({ id: "g2d-line", type: "line", source: "g2d", paint: { "line-color": ["get", "lc"], "line-width": ["get", "lw"] } }, before);
+      map.addSource("route", { type: "geojson", data: fc([]) });
+      map.addLayer({ id: "route-solid", type: "line", source: "route", filter: ["==", ["get", "dash"], 0],
+        paint: { "line-color": ["get", "color"], "line-width": ["get", "w"], "line-opacity": 0.9 } }, before);
+      map.addLayer({ id: "route-dash", type: "line", source: "route", filter: ["==", ["get", "dash"], 1],
+        paint: { "line-color": ["get", "color"], "line-width": ["get", "w"], "line-dasharray": [2, 1.5], "line-opacity": 0.95 } }, before);
+
+      // 사고 건물(시나리오 A 전용, 반투명 주황)
+      map.addSource("tower", { type: "geojson", data: fc([]) });
+      map.addLayer({ id: "tower", type: "fill-extrusion", source: "tower",
+        paint: { "fill-extrusion-color": "#ff9f43", "fill-extrusion-height": TOWER.h, "fill-extrusion-base": 0, "fill-extrusion-opacity": 0.55 } });
+
+      // 층 띠, 기체(3D 화살표·기둥·빛기둥·궤적)
+      // 주의: fill-extrusion-opacity는 도형별로 다르게 줄 수 없어서(데이터 기반 불가) 레이어마다 고정값으로 나눔
+      const ext = (op) => ({ "fill-extrusion-color": ["get", "color"], "fill-extrusion-height": ["get", "h"], "fill-extrusion-base": ["get", "b"], "fill-extrusion-opacity": op });
+      map.addSource("slab", { type: "geojson", data: fc([]) });
+      map.addLayer({ id: "slab", type: "fill-extrusion", source: "slab", paint: ext(0.95) });
+      map.addSource("soft", { type: "geojson", data: fc([]) });                      // 반투명: 빛기둥, 궤적, 섬광
+      map.addLayer({ id: "soft", type: "fill-extrusion", source: "soft", paint: ext(0.3) });
+      map.addSource("craft", { type: "geojson", data: fc([]) });                     // 불투명: 기체 블록, 기둥, 견인 줄
+      map.addLayer({ id: "craft", type: "fill-extrusion", source: "craft", paint: ext(0.97) });
+
+      ready = true; clearTimeout(failTimer);
+      applyScenario(pendingKey || "A");
+    });
+    const failTimer = setTimeout(() => {
+      if (!ready) showErr("지도를 불러오지 못했습니다.<br>미리보기 창에서는 보안 제한으로 막힐 수 있으니, <b>파일을 내려받아 브라우저로 직접 열어</b> 주세요. 인터넷 연결도 확인해 주세요.");
+    }, 12000);
+
+    // ===== 시나리오 전환 =====
+    function applyScenario(key) {
+      cur = key; S = SCS[key];
+      markers.forEach((m) => m.remove()); markers = [];
+      // 사고 건물은 시나리오 A에서만 표시
+      const sq0 = key === "A" ? fc([{ type: "Feature", properties: {}, geometry: { type: "Polygon", coordinates: sq(TOWER.lon, TOWER.lat, TOWER.half) } }]) : fc([]);
+      map.getSource("tower").setData(sq0);
+      // 기체 이름표(HTML 마커)와 목적지 마커
+      S.objs.forEach((o) => {
+        const el = document.createElement("div"); el.className = "lbl"; el.style.borderColor = o.base;
+        o._el = el; o._mk = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([126.9779, 37.564]).addTo(map); markers.push(o._mk);
+      });
+      S.dests.forEach((d) => {
+        const el = document.createElement("div"); el.className = "dst"; el.style.background = d.color; el.textContent = d.text;
+        d._el = el; d._mk = new maplibregl.Marker({ element: el, anchor: "bottom" }).setLngLat([d.lon, d.lat]).addTo(map); markers.push(d._mk);
+      });
+      // 우측 상단 좌표 블록
+      const box = $("hudObjs"); box.innerHTML = "";
+      S.objs.forEach((o) => {
+        const d = document.createElement("div"); d.className = "blk"; d.style.borderLeftColor = o.base;
+        d.innerHTML = '<div class="nm"><b></b><span class="arr">▲</span></div><div class="ln l1"></div><div class="ln l2"></div><div class="ln l3"></div>';
+        d.querySelector("b").textContent = o.name; d.querySelector("b").style.color = o.base;
+        o._h = { el: d, l1: d.querySelector(".l1"), l2: d.querySelector(".l2"), l3: d.querySelector(".l3"), arr: d.querySelector(".arr") };
+        box.appendChild(d);
+      });
+      $("subTitle").textContent = S.sub + " · 모든 수치는 가정값";
+      $("seek").max = S.T; $("cmp").style.display = "none"; $("mission").style.display = "none";
+      $("scA").classList.toggle("on", key === "A"); $("scB").classList.toggle("on", key === "B");
+      t = 0; dirty = true;
+    }
+
+    // ===== 카메라 키프레임 보간 =====
+    function camAt(t) {
+      const K = S.KF; let i = 0; while (i < K.length - 2 && t >= K[i + 1].t) i++;
+      const a = K[i], b = K[i + 1], e = smooth(clamp((t - a.t) / (b.t - a.t), 0, 1));
+      return { c: [lerp(a.c[0], b.c[0], e), lerp(a.c[1], b.c[1], e)], z: lerp(a.z, b.z, e), b: lerp(a.b, b.b, e), p: lerp(a.p, b.p, e), f: lerp(a.f, b.f, e) };
+    }
+    // 기체의 진행 방향(최근 움직인 방향). 멈춰 있으면 마지막으로 움직인 방향 유지
+    function heading(o, t) {
+      for (let k = 0; k <= 40; k++) {
+        const tt = t - k * 0.5, a = o.pos(Math.max(0, tt - 0.2)), b = o.pos(Math.max(0, tt + 0.2));
+        if (a && b) { const de = (b.lon - a.lon) / mLon, dn = (b.lat - a.lat) / mLat; if (Math.hypot(de, dn) > 0.6) return (Math.atan2(de, dn) * 180 / Math.PI + 360) % 360; }
+      }
+      return o.hdg0;
+    }
+
+    // ===== 한 프레임 그리기 =====
+    function render(t) {
+      if (!ready || !S) return;
+      // --- 카메라: 기체를 따라가되, 기체 고도만큼 시야를 위로 보정(padding) ---
+      const k = camAt(t), f = S.focus(t);
+      const lon = lerp(k.c[0], f.lon, k.f), lat = lerp(k.c[1], f.lat, k.f);
+      const ppm = 512 * Math.pow(2, k.z) / (40075016.686 * Math.cos(lat * Math.PI / 180));        // 1m당 화면 픽셀
+      const pad = Math.min(Math.round(f.alt * Math.sin(k.p * Math.PI / 180) * ppm * 1.1 * k.f), Math.round(innerHeight * 0.6));
+      map.jumpTo({ center: [lon, lat], zoom: k.z, bearing: k.b, pitch: k.p, padding: { top: pad, bottom: 0, left: 0, right: 0 } });
+
+      const F = { craft: [], soft: [], g2d: [], route: [], slab: [] };
+      const pitchRad = map.getPitch() * Math.PI / 180, ppm2 = 512 * Math.pow(2, map.getZoom()) / (40075016.686 * Math.cos(lat * Math.PI / 180));
+
+      S.objs.forEach((o) => {
+        const p = o.pos(t);
+        if (!p) { o._el.style.display = "none"; o._h.el.style.display = "none"; return; }
+        o._el.style.display = ""; o._h.el.style.display = "";
+        const hdg = heading(o, t), col = o.color(t), th = o.thick;
+        // 속도·수직속도
+        const a = o.pos(Math.max(0, t - 0.2)) || p, b = o.pos(t + 0.2) || p;
+        const spd = Math.hypot((b.lon - a.lon) / mLon, (b.lat - a.lat) / mLat) / 0.4, vz = -(b.alt - a.alt) / 0.4;
+
+        // 3D 화살표 기체 + 지면까지의 기둥 + 위로 솟는 빛기둥
+        blocks(F.craft, p, hdg, o, col, t);
+        F.craft.push(poly(sq(p.lon, p.lat, 3), { color: "#ffd34d", b: 0, h: Math.max(p.alt - th * 0.4, 0.1) }));              // 지면~기체 기둥
+        F.soft.push(poly(sq(p.lon, p.lat, 9), { color: col, b: p.alt + th, h: p.alt + th + 260 }));                          // 위로 솟는 빛기둥
+        // 지나온 경로: 공중에 남는 3D 점(흔적)과 지상 선
+        const gp = [];
+        for (let i = 1; i <= 10; i++) {
+          const tt = t - i * 0.8; if (tt < 0) break;
+          const q = o.pos(tt); if (!q) break;
+          F.soft.push(poly(sq(q.lon, q.lat, 7), { color: col, b: q.alt - 7, h: q.alt + 7 }));                                 // 지나온 경로의 공중 흔적
+        }
+        for (let tt = Math.max(0, t - 9); tt <= t; tt += 0.6) { const q = o.pos(tt); if (q) gp.push([q.lon, q.lat]); }
+        if (gp.length > 1) F.route.push(line(gp, { color: col, dash: 0, w: 4 }));
+        // 지상: 맥동하는 링 + 진행 방향 그림자 화살표
+        F.g2d.push(poly(circ(p.lon, p.lat, 60 + 15 * Math.sin(t * 5)), { color: col, op: 0.15, lc: col, lw: 2 }));
+        F.g2d.push(poly(chev(p.lon, p.lat, hdg, o.len * 1.3, o.wid * 1.3), { color: "#000000", op: 0.35, lc: col, lw: 2 }));
+
+        // 기체 위 이름표(고도 보정)
+        const off = (p.alt + th) * Math.sin(pitchRad) * ppm2 + 18;
+        o._mk.setLngLat([p.lon, p.lat]); o._mk.setOffset([0, -off]);
+        o._el.innerHTML = "<b>" + o.name + "</b><small>" + o.status(t) + "<br>고도 " + p.alt.toFixed(0) + "m · " + (spd * 3.6).toFixed(0) + "km/h · " + compass(hdg) + "</small>";
+
+        // 우측 좌표 블록
+        o._h.l1.textContent = "Y " + p.lat.toFixed(6) + "°  X " + p.lon.toFixed(6) + "°";
+        o._h.l2.textContent = "Z 해발 " + (GROUND + p.alt).toFixed(1) + "m · 지상고 " + p.alt.toFixed(1) + "m";
+        o._h.l3.textContent = (spd * 3.6).toFixed(0) + "km/h · " + compass(hdg) + " " + Math.round(hdg) + "° · 수직 " + (vz > 0.3 ? "-" : "") + Math.abs(vz).toFixed(1) + "m/s";
+        o._h.arr.style.transform = "rotate(" + (hdg - map.getBearing()) + "deg)";     // 화면 기준 진행 방향
+      });
+
+      // 목적지 마커, 예정 경로
+      S.dests.forEach((d) => { d._el.style.display = d.show(t) ? "" : "none"; });
+      S.routes.forEach((r) => { const c = r.coords(t); if (c) F.route.push(line(c, { color: r.color, dash: r.dash, w: r.w })); });
+      S.extra(t, F);
+
+      map.getSource("craft").setData(fc(F.craft)); map.getSource("soft").setData(fc(F.soft)); map.getSource("g2d").setData(fc(F.g2d));
+      map.getSource("route").setData(fc(F.route)); map.getSource("slab").setData(fc(F.slab));
+
+      // --- 화면 위 정보 ---
+      const al = $("alert"), av = S.alert(t);
+      if (av) { al.style.display = "block"; al.className = av[0]; al.textContent = av[1]; } else al.style.display = "none";
+      let sc = S.scenes[0]; for (const s of S.scenes) if (t >= s[0]) sc = s;
+      $("capTitle").textContent = sc[1]; $("capText").textContent = sc[2];
+      S.ui(t);
+      const fin = S.final(t);
+      if (fin) { $("final").style.display = "flex"; $("finalBig").textContent = fin.big; $("finalP1").textContent = fin.p1; $("finalP2").textContent = fin.p2; $("finalNote").textContent = fin.note; }
+      else $("final").style.display = "none";
+      $("seek").value = t; $("tlabel").textContent = Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0") + " / 0:" + S.T;
+    }
+
+    // ===== 재생 루프 =====
+    function loop(ts) {
+      if (playing && S) { t += (ts - last) / 1000; if (t >= S.T) { t = S.T; playing = false; $("playBtn").textContent = "▶"; } dirty = true; }
+      last = ts;
+      if (dirty) { render(t); dirty = false; }
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    // ===== 컨트롤 =====
+    const play = () => { if (S && t >= S.T) t = 0; playing = true; $("playBtn").textContent = "⏸"; };
+    const pause = () => { playing = false; $("playBtn").textContent = "▶"; };
+    const choose = (key) => {                                               // 시나리오 선택 후 처음부터 재생
+      $("start").style.display = "none"; pendingKey = key;
+      if (ready) applyScenario(key);
+      t = 0; dirty = true; play();
+    };
+    $("pickA").onclick = () => choose("A"); $("pickB").onclick = () => choose("B");
+    $("scA").onclick = () => choose("A"); $("scB").onclick = () => choose("B");
+    $("playBtn").onclick = () => (playing ? pause() : play());
+    $("restartBtn").onclick = () => { t = 0; dirty = true; play(); };
+    $("seek").oninput = (e) => { t = +e.target.value; dirty = true; };
+    $("recBtn").onclick = () => { document.body.classList.add("rec"); t = 0; dirty = true; play(); };     // 녹화 모드: 컨트롤 숨김
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") document.body.classList.remove("rec");
+      if (e.code === "Space" && $("start").style.display === "none") { e.preventDefault(); playing ? pause() : play(); }
+    });
+  }
+</script>
+</body>
+</html>

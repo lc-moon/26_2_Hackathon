@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SkyRule - 하늘과 도로의 통행 순서 시뮬레이터</title>
+<style>
+  /* 색상 변수 정의 */
+  :root {
+    --bg: #0f1b33;
+    --card: #17284a;
+    --line: #2a4070;
+    --text: #eef2fb;
+    --sub: #a9b9db;
+    --accent: #ffd34d;
+    --danger: #ff6b6b;
+    --ok: #4cd9a0;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif; line-height: 1.5;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 22px 16px 60px; }
+  h1 { margin: 0; font-size: 28px; }
+  h1 span { color: var(--accent); }
+  .lead { color: var(--sub); margin: 6px 0 16px; }
+
+  /* 작동 원리 3단계 카드 */
+  .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+  @media (max-width: 760px) { .steps { grid-template-columns: 1fr; } }
+  .step { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; }
+  .step .ico { font-size: 28px; }
+  .step b { display: block; margin: 2px 0; }
+  .step p { margin: 0; font-size: 13px; color: var(--sub); }
+  .chip { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 99px; background: var(--line); color: var(--sub); margin-top: 6px; }
+
+  /* 교차 구간 장면 */
+  .scene {
+    position: relative; height: 300px; border-radius: 18px; overflow: hidden;
+    border: 1px solid var(--line);
+    background: linear-gradient(#4a9bff 0%, #bfe3ff 50%, #3b404d 50%, #262a34 100%);
+  }
+  .lane { position: absolute; left: 0; right: 0; height: 100px; }
+  .lane.sky { top: 38px; background: rgba(255,255,255,.28); border-top: 2px dashed rgba(255,255,255,.7); border-bottom: 2px dashed rgba(255,255,255,.7); }
+  .lane.road { top: 170px; background: rgba(0,0,0,.35); border-top: 2px solid #666; border-bottom: 2px solid #666; }
+  .lane.road::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; border-top: 3px dashed rgba(255,255,255,.35); }
+  .lane .tag { position: absolute; left: 10px; top: 4px; font-size: 12px; font-weight: 700; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  .cloud { position: absolute; font-size: 30px; opacity: .8; }
+  .zone {
+    position: absolute; left: 40%; width: 16%; top: 0; bottom: 0;
+    border-left: 3px dashed var(--accent); border-right: 3px dashed var(--accent);
+    background: rgba(255,211,77,.10);
+    transition: background .3s;
+  }
+  .zone.flash { background: rgba(255,211,77,.35); }
+  .zone .label { position: absolute; top: 6px; width: 100%; text-align: center; font-size: 12px; font-weight: 800; color: var(--accent); text-shadow: 0 1px 3px rgba(0,0,0,.6); }
+  .signal {
+    position: absolute; top: 132px; left: 50%; transform: translateX(-50%);
+    background: #0b1630; border: 2px solid var(--line); border-radius: 12px;
+    padding: 4px 10px; font-size: 13px; font-weight: 700; white-space: nowrap;
+  }
+  .signal.go { border-color: var(--ok); color: var(--ok); }
+
+  /* 차량 */
+  .car {
+    position: absolute; width: 64px; height: 64px; display: flex; align-items: center; justify-content: center;
+    transition: left .7s ease, top .7s ease;
+  }
+  .car .em { font-size: 42px; display: inline-block; transform: scaleX(-1); filter: drop-shadow(0 3px 3px rgba(0,0,0,.45)); }
+  .car.going { transition: left 1.1s cubic-bezier(.5,0,.9,.6); z-index: 5; }
+  .car .num {
+    position: absolute; top: -2px; left: -2px; width: 24px; height: 24px; border-radius: 50%;
+    background: #fff; color: #1a2440; font-weight: 800; font-size: 13px; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 4px rgba(0,0,0,.4);
+  }
+  .car.first .num { background: var(--accent); }
+  .car.first::before {
+    content: ""; position: absolute; inset: -4px; border-radius: 16px; border: 3px solid var(--accent);
+    box-shadow: 0 0 14px var(--accent);
+  }
+  .car .warn { position: absolute; right: -4px; bottom: -4px; font-size: 20px; }
+  .car.fake .em { animation: shake .35s infinite; }
+  @keyframes shake { 0%,100% { transform: scaleX(-1) translateX(0); } 25% { transform: scaleX(-1) translateX(-3px); } 75% { transform: scaleX(-1) translateX(3px); } }
+  .car .nm {
+    position: absolute; top: 62px; left: 50%; transform: translateX(-50%);
+    font-size: 11px; white-space: nowrap; background: rgba(0,0,0,.55); padding: 0 6px; border-radius: 6px;
+  }
+
+  /* 버튼, 입력 */
+  button {
+    cursor: pointer; border: none; border-radius: 10px; padding: 10px 14px;
+    font-weight: 700; font-size: 14px; background: var(--accent); color: #1a2440; font-family: inherit;
+  }
+  button:disabled { opacity: .5; cursor: default; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  button.ghost:hover { border-color: var(--accent); }
+  .btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+  .scenarios button { font-size: 13px; }
+
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-top: 16px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+  .card h2 { margin: 0 0 10px; font-size: 18px; }
+  .card h2 small { color: var(--sub); font-weight: 400; font-size: 13px; margin-left: 6px; }
+  label { display: block; font-size: 13px; color: var(--sub); margin: 12px 0 4px; }
+  input[type=text] {
+    width: 100%; padding: 9px 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: #0f1b33; color: var(--text); font-size: 14px;
+  }
+  input[type=range] { width: 100%; accent-color: var(--accent); }
+  .val { color: var(--accent); font-weight: 800; float: right; }
+  .types { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .types button { background: #12223f; color: var(--text); border: 2px solid var(--line); padding: 8px 2px; font-size: 12px; }
+  .types button span { display: block; font-size: 26px; }
+  .types button.sel { border-color: var(--accent); background: #1d3260; }
+  .check { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 14px; }
+  .check input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+  /* 순위 목록 */
+  .veh { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; background: #12223f; }
+  .veh.first { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .veh .top { display: flex; align-items: center; gap: 10px; }
+  .veh .big { font-size: 30px; }
+  .veh .nm2 { font-weight: 800; flex: 1; }
+  .veh .nm2 small { display: block; font-weight: 400; color: var(--sub); font-size: 12px; }
+  .veh .pt { font-size: 20px; font-weight: 800; color: var(--accent); }
+  .meters { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
+  .meter { font-size: 11px; color: var(--sub); }
+  .meter .tr { height: 8px; background: #0b1630; border-radius: 5px; overflow: hidden; margin-top: 3px; }
+  .meter .tr i { display: block; height: 100%; border-radius: 5px; transition: width .4s; }
+  .m1 i { background: #ff8a5c; } .m2 i { background: #5cb8ff; } .m3 i { background: var(--ok); }
+  .why { font-size: 13px; margin-top: 8px; color: var(--text); }
+  .why.bad { color: var(--danger); }
+  .empty { color: var(--sub); text-align: center; padding: 18px 0; }
+  .log { max-height: 260px; overflow: auto; font-size: 13px; color: var(--sub); }
+  .log div { padding: 5px 0; border-bottom: 1px dashed var(--line); }
+  .log b { color: var(--accent); }
+  details { margin-top: 14px; }
+  summary { cursor: pointer; color: var(--sub); font-size: 13px; }
+  .formula { font-family: ui-monospace, Consolas, monospace; font-size: 12px; background: #0b1630; padding: 8px; border-radius: 8px; margin: 8px 0; }
+  .note { font-size: 12px; color: var(--sub); margin-top: 18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Sky<span>Rule</span> · 하늘과 도로의 통행 순서</h1>
+  <p class="lead">날아다니는 자동차가 도로와 하늘을 함께 쓰게 되면, 누가 먼저 가야 할까요? SkyRule이 점수로 순서를 정해 줍니다.</p>
+
+  <!-- 작동 원리 -->
+  <div class="steps">
+    <div class="step"><div class="ico">🚨</div><b>① 더 급한 차가 먼저</b>
+      <p>사람의 생명이 걸린 차량(구급차 등)에 높은 점수를 줍니다.</p><span class="chip">🔥 소방 관점</span></div>
+    <div class="step"><div class="ico">🛑</div><b>② 멈추기 어려운 차도 먼저</b>
+      <p>하늘을 나는 차는 도로 위 차처럼 갑자기 멈출 수 없어서, 먼저 보내는 편이 안전합니다.</p><span class="chip">⚙️ 기계공학 관점</span></div>
+    <div class="step"><div class="ico">⏱</div><b>③ 오래 기다리면 순서가 올라감</b>
+      <p>덜 급한 차가 영원히 못 가는 일을 막기 위해, 기다린 시간만큼 점수를 더해 줍니다.</p><span class="chip">💻 컴퓨터공학 관점 (우선순위 스케줄링)</span></div>
+  </div>
+
+  <!-- 교차 구간 장면 -->
+  <div class="scene" id="scene">
+    <div class="lane sky"><span class="tag">☁️ 하늘길</span></div>
+    <div class="lane road"><span class="tag">🛣️ 도로</span></div>
+    <span class="cloud" style="left:8%;top:6px">☁️</span>
+    <span class="cloud" style="left:62%;top:14px">☁️</span>
+    <span class="cloud" style="left:85%;top:4px">☁️</span>
+    <div class="zone" id="zone"><div class="label">🔀 합류 구간</div></div>
+    <div class="signal" id="signal">⏳ 대기 중</div>
+  </div>
+
+  <div class="btns">
+    <button id="passBtn">▶ 1번 차량 보내기</button>
+    <button class="ghost" id="autoBtn">⏯ 자동 재생</button>
+    <button class="ghost" id="resetBtn">↺ 전체 초기화</button>
+  </div>
+  <div class="btns scenarios">
+    <button class="ghost" data-preset="basic">🚑 기본 상황</button>
+    <button class="ghost" data-preset="fake">🚫 가짜 긴급 신호</button>
+    <button class="ghost" data-preset="starve">😢 계속 밀리는 차</button>
+  </div>
+
+  <div class="grid">
+    <!-- 왼쪽: 순위 설명 -->
+    <div class="card">
+      <h2>왜 이 순서일까요? <small>차량별 점수</small></h2>
+      <div id="list"></div>
+    </div>
+
+    <!-- 오른쪽: 차량 추가, 기록 -->
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <h2>직접 차량 추가하기</h2>
+        <div class="types" id="types"></div>
+
+        <label for="vName">이름 (비우면 자동)</label>
+        <input type="text" id="vName" placeholder="예: 우리 팀 비행택시">
+
+        <label>🚨 얼마나 급한가요? <span class="val" id="uVal">5</span></label>
+        <input type="range" id="vUrg" min="0" max="10" value="5">
+
+        <label>🛑 갑자기 멈추기 어려운 정도 <span class="val" id="rVal">5</span></label>
+        <input type="range" id="vRisk" min="0" max="10" value="5">
+
+        <div class="check">
+          <input type="checkbox" id="vVer" checked>
+          <label for="vVer" style="margin:0;color:var(--text)">🔐 긴급 신호가 진짜로 인증됨</label>
+        </div>
+        <div class="btns"><button id="addBtn">+ 차량 추가</button></div>
+
+        <details>
+          <summary>⚙️ 점수 계산 규칙 바꿔 보기</summary>
+          <div class="formula">점수 = 급한 정도×<span id="fU">5</span> + 멈추기 어려움×<span id="fM">2</span> + 기다린 횟수×<span id="fW">1</span></div>
+          <label>급한 정도 비중 <span class="val" id="wUVal">5</span></label>
+          <input type="range" id="wU" min="0" max="10" value="5">
+          <label>멈추기 어려움 비중 <span class="val" id="wMVal">2</span></label>
+          <input type="range" id="wM" min="0" max="10" value="2">
+          <label>기다린 시간 비중 <span class="val" id="wWVal">1</span></label>
+          <input type="range" id="wW" min="0" max="10" value="1">
+          <div class="check">
+            <input type="checkbox" id="crowd">
+            <label for="crowd" style="margin:0;color:var(--text)">새 차량이 계속 도착 (혼잡 모드)</label>
+          </div>
+        </details>
+      </div>
+
+      <div class="card">
+        <h2>진행 기록</h2>
+        <div class="log" id="log"><div>위의 상황 버튼을 눌러 시작해 보세요.</div></div>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">※ 이 기준은 학습용으로 제안한 가상의 규칙이며 실제 법규가 아닙니다. 운영체제의 우선순위 스케줄링과 에이징 개념을 미래 교통에 적용한 프로토타입입니다.</p>
+</div>
+
+<script>
+  // ===== 차량 종류 정의 (lane: 하늘길 / 도로) =====
+  const TYPES = [
+    { key: "구급차",   emoji: "🚑", lane: "road" },
+    { key: "비행택시", emoji: "🚁", lane: "sky"  },
+    { key: "자동차",   emoji: "🚗", lane: "road" },
+    { key: "화물 드론", emoji: "🛸", lane: "sky"  }
+  ];
+  const typeOf = (key) => TYPES.find((t) => t.key === key);
+
+  // ===== 상태 =====
+  let vehicles = [];       // 대기 중인 차량
+  let nextId = 1;          // 차량 번호
+  let passCount = 0;       // 보낸 횟수
+  let busy = false;        // 통과 애니메이션 진행 여부
+  let autoTimer = null;    // 자동 재생 타이머
+  let selType = "구급차";  // 추가할 차량 종류
+
+  const $ = (id) => document.getElementById(id);
+  const scene = $("scene");
+  const carEls = new Map();  // 차량 id -> DOM 요소 (이동 애니메이션 유지용)
+
+  // 사용자 입력이 HTML로 해석되지 않게 처리
+  const esc = (s) => s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+  // ===== 점수 계산 (핵심 로직) =====
+  function weights() { return { u: +$("wU").value, m: +$("wM").value, w: +$("wW").value }; }
+
+  function calc(v) {
+    const W = weights();
+    // 높은 긴급도를 주장하지만 인증이 없으면 가짜 신호로 보고 긴급도 0 처리
+    const suspicious = v.urgency >= 7 && !v.verified;
+    const effUrg = suspicious ? 0 : v.urgency;
+    const sU = effUrg * W.u;     // 급한 정도 점수
+    const sM = v.risk * W.m;     // 멈추기 어려움 점수
+    const sW = v.wait * W.w;     // 기다린 시간 점수 (에이징)
+    return { effUrg, sU, sM, sW, total: sU + sM + sW, suspicious };
+  }
+
+  // 점수 높은 순 정렬 (동점이면 먼저 온 차량)
+  function rank() {
+    return vehicles.map((v) => ({ v, s: calc(v) }))
+      .sort((a, b) => b.s.total - a.s.total || a.v.id - b.v.id);
+  }
+
+  // ===== 차량 DOM 만들기 =====
+  function createCar(v) {
+    const el = document.createElement("div");
+    el.className = "car";
+    el.innerHTML = '<span class="em"></span><span class="num"></span><span class="nm"></span>';
+    el.querySelector(".em").textContent = typeOf(v.type).emoji;
+    el.querySelector(".nm").textContent = v.name;
+    return el;
+  }
+
+  // ===== 화면 그리기 =====
+  function render() {
+    const W = scene.clientWidth;
+    const ranked = rank();
+    const zoneLeft = W * 0.40;
+
+    // 하늘길/도로별로 나누고 합류 구간 가까운 순서대로 배치
+    const lanes = { sky: [], road: [] };
+    ranked.forEach((r, i) => { r.rank = i + 1; lanes[typeOf(r.v.type).lane].push(r); });
+    ["sky", "road"].forEach((ln) => {
+      const arr = lanes[ln];
+      const gap = Math.min(86, (zoneLeft - 30) / Math.max(arr.length, 1));
+      arr.forEach((r, idx) => { r.x = zoneLeft - 72 - idx * gap; r.y = ln === "sky" ? 52 : 184; });
+    });
+
+    // 사라진 차량 제거
+    const alive = new Set(vehicles.map((v) => v.id));
+    carEls.forEach((el, id) => { if (!alive.has(id)) { el.remove(); carEls.delete(id); } });
+
+    // 차량 위치/표시 갱신
+    ranked.forEach((r) => {
+      let el = carEls.get(r.v.id);
+      if (!el) {                       // 새 차량은 화면 왼쪽 밖에서 들어옴
+        el = createCar(r.v);
+        el.style.left = "-90px"; el.style.top = r.y + "px";
+        scene.appendChild(el); carEls.set(r.v.id, el);
+        void el.offsetWidth;           // 강제 리플로우로 애니메이션 시작
+      }
+      if (!el.classList.contains("going")) { el.style.left = r.x + "px"; el.style.top = r.y + "px"; }
+      el.querySelector(".num").textContent = r.rank;
+      el.classList.toggle("first", r.rank === 1);
+      el.classList.toggle("fake", r.s.suspicious);
+      let w = el.querySelector(".warn");
+      if (r.s.suspicious && !w) { w = document.createElement("span"); w.className = "warn"; w.textContent = "🚫"; el.appendChild(w); }
+      if (!r.s.suspicious && w) w.remove();
+    });
+
+    renderSignal(ranked);
+    renderList(ranked);
+    $("passBtn").disabled = busy || vehicles.length === 0;
+  }
+
+  // 합류 구간 신호
+  function renderSignal(ranked) {
+    const sg = $("signal");
+    if (ranked.length === 0) { sg.textContent = "⏳ 대기 중인 차량 없음"; sg.className = "signal"; return; }
+    sg.textContent = "🟢 " + ranked[0].v.name + " 먼저!";
+    sg.className = "signal go";
+  }
+
+  // 순위 카드 목록
+  function renderList(ranked) {
+    const box = $("list");
+    box.innerHTML = "";
+    if (ranked.length === 0) { box.innerHTML = '<div class="empty">대기 중인 차량이 없습니다.</div>'; return; }
+    ranked.forEach((r, i) => {
+      const { v, s } = r;
+      // 이유를 쉬운 말로 설명
+      let why = "", bad = false;
+      if (s.suspicious) { why = "🚫 가짜 긴급 신호로 의심돼서 긴급 차량으로 인정하지 않았어요."; bad = true; }
+      else if (s.sU > 0 && s.sU >= s.sM && s.sU >= s.sW) why = "생명이 걸린 상황이라 가장 먼저 보내요.";
+      else if (s.sM > 0 && s.sM >= s.sW) why = "갑자기 멈추기 어려워서 먼저 보내는 게 안전해요.";
+      else if (s.sW > 0) why = "오래 기다려서 순서가 올라갔어요.";
+      else why = "특별히 서둘러야 할 이유는 없어요.";
+
+      const card = document.createElement("div");
+      card.className = "veh" + (i === 0 ? " first" : "");
+      card.innerHTML =
+        '<div class="top"><span class="big">' + typeOf(v.type).emoji + '</span>' +
+        '<div class="nm2">' + (i + 1) + '번 · ' + esc(v.name) + '<small>' + v.type + (typeOf(v.type).lane === "sky" ? " · 하늘길" : " · 도로") + '</small></div>' +
+        '<div class="pt">' + s.total.toFixed(0) + '점</div></div>' +
+        '<div class="meters">' +
+          '<div class="meter m1">🚨 급한 정도 ' + s.effUrg + '/10<div class="tr"><i style="width:' + s.effUrg * 10 + '%"></i></div></div>' +
+          '<div class="meter m2">🛑 멈추기 어려움 ' + v.risk + '/10<div class="tr"><i style="width:' + v.risk * 10 + '%"></i></div></div>' +
+          '<div class="meter m3">⏱ 기다린 횟수 ' + v.wait + '<div class="tr"><i style="width:' + Math.min(v.wait * 10, 100) + '%"></i></div></div>' +
+        '</div>' +
+        '<div class="why' + (bad ? " bad" : "") + '">' + why + '</div>';
+      box.appendChild(card);
+    });
+  }
+
+  // 기록 추가
+  function addLog(html) {
+    const log = $("log");
+    if (log.firstChild && log.firstChild.textContent.startsWith("위의 상황")) log.innerHTML = "";
+    const d = document.createElement("div"); d.innerHTML = html; log.prepend(d);
+  }
+
+  // ===== 차량 추가 =====
+  function addVehicle(name, type, urgency, risk, verified) {
+    vehicles.push({ id: nextId++, name, type, urgency, risk, verified, wait: 0 });
+  }
+
+  // 혼잡 모드: 무작위 차량 도착
+  function addRandom() {
+    const t = TYPES[Math.floor(Math.random() * TYPES.length)];
+    const urg = t.key === "구급차" ? 8 + Math.floor(Math.random() * 3) : Math.floor(Math.random() * 6);
+    const risk = t.lane === "sky" ? 5 + Math.floor(Math.random() * 5) : Math.floor(Math.random() * 6);
+    addVehicle(t.key + " " + nextId, t.key, urg, risk, true);
+  }
+
+  // ===== 1번 차량 보내기 (통과 애니메이션) =====
+  function pass() {
+    if (busy || vehicles.length === 0) return;
+    busy = true;
+    const top = rank()[0];
+    const el = carEls.get(top.v.id);
+    el.classList.add("going");
+    el.style.left = (scene.clientWidth + 100) + "px";   // 화면 오른쪽 밖으로 이동
+    $("zone").classList.add("flash");
+    passCount++;
+    addLog("<b>" + passCount + "번째</b> " + typeOf(top.v.type).emoji + " " + esc(top.v.name) + " 통과 (" + top.s.total.toFixed(0) + "점)");
+    $("passBtn").disabled = true;
+
+    setTimeout(() => {
+      $("zone").classList.remove("flash");
+      vehicles = vehicles.filter((x) => x.id !== top.v.id);
+      vehicles.forEach((x) => x.wait++);                         // 남은 차량은 기다린 횟수 +1
+      if ($("crowd").checked && vehicles.length < 6) addRandom(); // 혼잡 모드면 새 차량 도착
+      busy = false;
+      render();
+      if (vehicles.length === 0) stopAuto();
+    }, 1150);
+  }
+
+  // ===== 자동 재생 =====
+  function stopAuto() { if (autoTimer) { clearInterval(autoTimer); autoTimer = null; } $("autoBtn").textContent = "⏯ 자동 재생"; }
+  $("autoBtn").onclick = () => {
+    if (autoTimer) { stopAuto(); return; }
+    $("autoBtn").textContent = "⏸ 멈추기";
+    pass();
+    autoTimer = setInterval(pass, 2300);
+  };
+  $("passBtn").onclick = pass;
+
+  // ===== 초기화 =====
+  function resetAll() {
+    stopAuto(); busy = false; vehicles = []; passCount = 0;
+    carEls.forEach((el) => el.remove()); carEls.clear();
+    $("log").innerHTML = "<div>위의 상황 버튼을 눌러 시작해 보세요.</div>";
+  }
+  $("resetBtn").onclick = () => { resetAll(); render(); };
+
+  // ===== 상황(시나리오) =====
+  const presets = {
+    // 기본: 서로 다른 종류의 차량이 한 번에 도착
+    basic() {
+      $("crowd").checked = false;
+      addVehicle("구급차 A", "구급차", 10, 7, true);
+      addVehicle("비행택시 B", "비행택시", 4, 9, true);
+      addVehicle("자동차 C", "자동차", 2, 4, true);
+      addVehicle("화물 드론 D", "화물 드론", 1, 5, true);
+    },
+    // 가짜 긴급 신호: 인증 없이 긴급도 10을 주장하는 차량
+    fake() {
+      $("crowd").checked = false;
+      addVehicle("구급차 A", "구급차", 9, 7, true);
+      addVehicle("수상한 차 X", "자동차", 10, 4, false);
+      addVehicle("비행택시 B", "비행택시", 4, 9, true);
+    },
+    // 계속 밀리는 차: 기다린 시간 비중 0 + 긴급 차량이 계속 도착
+    starve() {
+      $("wW").value = 0; syncWeights(false);
+      $("crowd").checked = true;
+      addVehicle("자동차 C", "자동차", 1, 2, true);
+      addVehicle("구급차 A", "구급차", 9, 6, true);
+      addVehicle("구급차 B", "구급차", 8, 6, true);
+      addVehicle("구급차 D", "구급차", 9, 5, true);
+      addLog("기다린 시간 비중을 0으로 했어요. 자동 재생을 켜면 자동차 C가 계속 밀립니다. ⚙️ 규칙에서 비중을 올려 비교해 보세요.");
+    }
+  };
+  document.querySelectorAll("[data-preset]").forEach((btn) => {
+    btn.onclick = () => {
+      const keepLog = btn.dataset.preset === "starve";
+      resetAll();
+      if (!keepLog) $("log").innerHTML = "";
+      presets[btn.dataset.preset]();
+      render();
+    };
+  });
+
+  // ===== 차량 종류 버튼 =====
+  TYPES.forEach((t) => {
+    const b = document.createElement("button");
+    b.innerHTML = "<span>" + t.emoji + "</span>" + t.key;
+    b.onclick = () => { selType = t.key; document.querySelectorAll(".types button").forEach((x) => x.classList.remove("sel")); b.classList.add("sel"); };
+    if (t.key === selType) b.classList.add("sel");
+    $("types").appendChild(b);
+  });
+
+  $("addBtn").onclick = () => {
+    if (vehicles.length >= 7) { addLog("한 번에 7대까지만 추가할 수 있어요."); return; }
+    const name = $("vName").value.trim() || (selType + " " + nextId);
+    addVehicle(name, selType, +$("vUrg").value, +$("vRisk").value, $("vVer").checked);
+    $("vName").value = "";
+    render();
+  };
+
+  // ===== 슬라이더 표시 동기화 =====
+  function syncWeights(doRender = true) {
+    ["U", "M", "W"].forEach((k) => {
+      $("w" + k + "Val").textContent = $("w" + k).value;
+      $("f" + k).textContent = $("w" + k).value;
+    });
+    if (doRender) render();
+  }
+  ["wU", "wM", "wW"].forEach((id) => $(id).addEventListener("input", () => syncWeights()));
+  $("vUrg").addEventListener("input", () => { $("uVal").textContent = $("vUrg").value; });
+  $("vRisk").addEventListener("input", () => { $("rVal").textContent = $("vRisk").value; });
+  window.addEventListener("resize", render);
+
+  // 처음에는 기본 상황으로 시작
+  presets.basic();
+  render();
+</script>
+</body>
+</html>

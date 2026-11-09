@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>서울 3D 골든타임 · 브이월드 3D 3.0 실험판</title>
+<style>
+  :root { --text:#fff; --sub:#b9c6e4; --accent:#ffd34d; --red:#ff3b3b; --ok:#4cd9a0; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0b1630; font-family: "Pretendard","Noto Sans KR",system-ui,sans-serif; color: var(--text); overflow: hidden; }
+  #vmap { position: absolute; inset: 0; }
+  .glass { background: rgba(8,16,36,.82); border: 1px solid rgba(255,255,255,.16); border-radius: 14px; backdrop-filter: blur(6px); }
+  #hudTitle { position: absolute; top: 14px; left: 14px; padding: 10px 14px; z-index: 5000; pointer-events: none; }
+  #hudTitle b { font-size: 17px; } #hudTitle small { display: block; color: var(--sub); font-size: 12px; margin-top: 2px; }
+
+  #hudCoord { position: absolute; top: 14px; right: 14px; padding: 10px 12px; z-index: 5000; width: 280px; pointer-events: none; }
+  #hudCoord .h { font-size: 12px; color: var(--accent); font-weight: 700; margin-bottom: 6px; }
+  #hudObjs { display: flex; flex-direction: column; gap: 8px; }
+  .blk { border-left: 4px solid #888; padding-left: 8px; }
+  .blk .nm { font-size: 13px; font-weight: 800; }
+  .blk .ln { font-family: ui-monospace, Consolas, monospace; font-size: 11.5px; color: #dbe5ff; }
+
+  #alert { position: absolute; top: 92px; left: 50%; transform: translateX(-50%); z-index: 5001; padding: 8px 18px; border-radius: 99px; font-weight: 800; font-size: 16px; background: rgba(255,59,59,.92); display: none; pointer-events: none; white-space: nowrap; }
+  #alert.warn { background: rgba(255,170,0,.94); color: #2a1a00; } #alert.ok { background: rgba(76,217,160,.95); color: #072a1d; }
+
+  #mission { position: absolute; left: 14px; top: 84px; z-index: 5000; display: none; pointer-events: none; width: 250px; padding: 12px 14px; }
+  #mission h4 { margin: 0 0 6px; font-size: 13px; color: var(--sub); }
+  #mission .tm { font-family: ui-monospace, Consolas, monospace; font-size: 26px; font-weight: 800; color: var(--ok); }
+  #mission ol { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px; }
+  #mission li { font-size: 12.5px; padding: 5px 8px; border-radius: 8px; background: rgba(255,255,255,.07); color: #8fa0c4; }
+  #mission li.done { color: #c9f7e4; background: rgba(76,217,160,.16); } #mission li.act { color: #1a2440; background: var(--accent); font-weight: 800; }
+
+  #caption { position: absolute; left: 50%; bottom: 86px; transform: translateX(-50%); width: min(780px, calc(100% - 28px)); z-index: 5000; padding: 12px 18px; text-align: center; pointer-events: none; }
+  #capTitle { display: block; font-size: 20px; font-weight: 800; color: var(--accent); } #capText { font-size: 14px; color: #e8eefc; }
+
+  #final { position: absolute; inset: 0; z-index: 5002; display: none; align-items: center; justify-content: center; background: rgba(5,10,24,.55); pointer-events: none; }
+  #final .box { padding: 26px 34px; text-align: center; max-width: 660px; }
+  #final .big { font-size: 38px; font-weight: 900; color: var(--accent); } #final p { margin: 6px 0; color: #e8eefc; } #final small { color: var(--sub); }
+
+  /* 진단 패널: 무엇이 되고 안 되는지 보여 줌 */
+  #diag { position: absolute; left: 14px; bottom: 150px; z-index: 5003; width: 360px; max-height: 38%; overflow: auto; padding: 10px 12px; font-size: 12px; line-height: 1.5; }
+  #diag b { color: var(--accent); } #diag .ok { color: #7dffc4; } #diag .bad { color: #ff9a9a; } #diag .ln { color: #cfdcff; word-break: break-all; }
+  #diag button, #controls button { cursor: pointer; border: 1px solid rgba(255,255,255,.25); border-radius: 8px; padding: 5px 9px; background: #14284f; color: #fff; font-weight: 700; font-family: inherit; font-size: 12px; }
+  #diag input { width: 64px; background: #0b1630; color: #fff; border: 1px solid rgba(255,255,255,.25); border-radius: 6px; padding: 3px 5px; }
+
+  #controls { position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 5004; display: flex; gap: 8px; align-items: center; padding: 8px 12px; width: min(820px, calc(100% - 28px)); }
+  #controls button { font-size: 13px; padding: 7px 11px; border-radius: 10px; white-space: nowrap; }
+  #seek { flex: 1; accent-color: var(--accent); min-width: 60px; }
+  #tlabel { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: var(--sub); min-width: 78px; text-align: right; }
+  body.rec #controls, body.rec #diag { display: none; }
+  @media (max-width: 760px) { #hudCoord { width: 210px; } #diag { width: 280px; } #mission { top: 190px; width: 200px; } }
+</style>
+</head>
+<body>
+<div id="vmap"></div>
+
+<div id="hudTitle" class="glass"><b>🆘 서울 3D 골든타임 · 브이월드 3D 3.0 실험판</b><small>시나리오 B · 공중 추돌과 구조 비행차량 · 모든 수치는 가정값</small></div>
+<div id="hudCoord" class="glass"><div class="h">📡 실시간 3축 좌표 · 방향 · 속도</div><div id="hudObjs"></div></div>
+<div id="alert"></div>
+
+<div id="mission" class="glass">
+  <h4>구조 진행 상황 (가정 시간)</h4>
+  <div class="tm" id="tmM">T+ 00:00</div>
+  <ol>
+    <li id="m1">💥 ① 충돌 감지 · 기동 불가</li><li id="m2">📡 ② 3D 좌표 자동 전송</li><li id="m3">🚑 ③ 구조 비행차량 출동</li>
+    <li id="m4">🔗 ④ 상부 접근 · 도킹</li><li id="m5">🛬 ⑤ 안전 착륙 완료</li>
+  </ol>
+</div>
+
+<div id="caption" class="glass"><span id="capTitle"></span><span id="capText"></span></div>
+<div id="final"><div class="box glass"><div class="big" id="finalBig">-</div><p id="finalP1">-</p><p id="finalP2">-</p><small id="finalNote">-</small></div></div>
+
+<div id="diag" class="glass">
+  <b>🔧 진단 (캡처해서 보내 주세요)</b>
+  <div id="diagLines"></div>
+  <div style="margin-top:6px;display:flex;gap:6px;align-items:center;flex-wrap:wrap">
+    <span>지면 높이 보정</span><input type="number" id="base" value="40" step="5"><span>m</span>
+    <button id="copyDiag">📋 진단 복사</button>
+  </div>
+</div>
+
+<div id="controls" class="glass">
+  <button id="playBtn">▶</button><button id="restartBtn">↺</button>
+  <input type="range" id="seek" min="0" max="54" step="0.05" value="0">
+  <span id="tlabel">0:00 / 0:54</span>
+  <button id="recBtn" title="컨트롤을 숨기고 처음부터 재생. Esc로 복귀">🎬 녹화</button>
+</div>
+
+<script>
+  const byId = (id) => document.getElementById(id);   // 주의: jQuery 전역 $ 와 겹치지 않도록 byId 로 이름 지음
+  const VWORLD_KEY = "YOUR_VWORLD_API_KEY";                  // 브이월드 인증키(발급받은 값)
+
+  // ===== 진단 로그 =====
+  const diag = [];
+  function d(kind, msg) {
+    diag.push((kind === "ok" ? "[OK] " : kind === "bad" ? "[실패] " : "") + msg);
+    const el = document.createElement("div"); el.className = "ln " + kind; el.textContent = (kind === "ok" ? "✅ " : kind === "bad" ? "❌ " : "· ") + msg;
+    byId("diagLines").appendChild(el);
+  }
+  window.addEventListener("error", (e) => d("bad", "오류: " + e.message));
+  byId("copyDiag").onclick = async () => { try { await navigator.clipboard.writeText(diag.join("\n")); byId("copyDiag").textContent = "✔ 복사됨"; } catch (e) { byId("copyDiag").textContent = "직접 캡처해 주세요"; } };
+  d("", "현재 주소: " + location.origin + " (인증키에 등록한 주소와 같아야 함)");
+
+  // ===== 브이월드 3.0 불러오기 (공개 예제의 로딩 순서) =====
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement("script"); s.type = "text/javascript"; s.src = src;
+      s.onload = () => resolve(); s.onerror = () => reject(new Error("스크립트 로드 실패: " + src));
+      document.head.appendChild(s);
+    });
+  }
+  async function loadVworld() {
+    if (!window.$ || !window.jQuery) await loadScript("https://code.jquery.com/jquery-3.6.0.min.js");
+    // 브이월드가 읽는 전역 설정
+    window.v_protocol = "https://"; window.vworldUrl = "https://map.vworld.kr";
+    window.vworld2DCache = "https://2d.vworld.kr/2DCache"; window.vworldBaseMapUrl = "https://cdn.vworld.kr/2d"; window.vworldStyledMapUrl = "https://2d.vworld.kr/stmap";
+    window.vworldVectorKey = "483E0418-2F46-3223-80A1-F66D16A24685";             // 공개 예제 코드에 들어 있는 값
+    window.vworldApiKey = VWORLD_KEY; window.vworldNoCss = "n"; window.vworldIsValid = "false"; window.vworld3DUrl = "/js/webglMapInit.js.do";
+    const list = [
+      "https://map.vworld.kr/js/ws3dmap/WS3DRelease3/WSViewerStartup.js",
+      "https://map.vworld.kr/js/ws3dmap/WS3DRelease3/VWViewerStartup.v30.min.js?ver=2025041502",
+      "https://map.vworld.kr/js/ws3dmap/WS3DRelease3/vw.ol3WebGL.v30.js?ver=2025041101"
+    ];
+    for (const src of list) await loadScript(src);
+    for (let i = 0; i < 40 && !window.vw; i++) await new Promise((r) => setTimeout(r, 250));
+    if (!window.vw) throw new Error("vw 객체를 찾지 못함(스크립트는 받았으나 초기화 실패)");
+  }
+
+  // ===== 지도 시작 =====
+  let map = null, viewer = null, CS = null;
+  function startMap() {
+    map = new window.vw.Map();
+    map.setOption({
+      mapId: "vmap",
+      initPosition: new window.vw.CameraPosition(new window.vw.CoordZ(126.9779, 37.5640, 1500), new window.vw.Direction(0, -45, 0)),
+      logo: true, navigation: false, autoRotate: false, showGrid: false, showAxis: false, backgroundColor: "#000000",
+      terrain: true, buildings: true, roads: true, water: true, vegetation: true
+    });
+    map.start();
+    d("ok", "vw.Map 시작 호출 완료");
+    d("", "map 메서드: " + Object.getOwnPropertyNames(Object.getPrototypeOf(map)).slice(0, 40).join(", "));
+  }
+
+  // ===== Cesium 뷰어 찾기 (3.0은 Cesium 기능 사용 가능하다고 안내됨 → 내부 객체를 탐색) =====
+  const looksLikeViewer = (v) => { try { return !!(v && typeof v === "object" && v.scene && v.camera && v.entities && v.scene.globe); } catch (e) { return false; } };
+  function findViewer() {
+    const found = [];
+    const add = (name, v) => { if (looksLikeViewer(v)) found.push([name, v]); };
+    ["viewer", "cesiumViewer", "vwViewer", "wsViewer", "Viewer"].forEach((k) => add("window." + k, window[k]));
+    ["getViewer", "getCesiumViewer", "getCesium"].forEach((fn) => { try { if (map && typeof map[fn] === "function") add("map." + fn + "()", map[fn]()); } catch (e) {} });
+    const scan = (obj, name, depth) => {
+      if (!obj || depth > 2) return; let keys = [];
+      try { keys = Object.getOwnPropertyNames(obj); } catch (e) { return; }
+      for (const k of keys) {
+        let v; try { v = obj[k]; } catch (e) { continue; }
+        if (!v || typeof v !== "object") continue;
+        if (looksLikeViewer(v)) { found.push([name + "." + k, v]); continue; }
+        if (depth < 2) scan(v, name + "." + k, depth + 1);
+      }
+    };
+    scan(map, "map", 0); scan(window.vw, "vw", 0);
+    return found.length ? found[0] : null;
+  }
+
+  async function boot() {
+    try { await loadVworld(); d("ok", "브이월드 3.0 스크립트 로드 완료"); } catch (e) { d("bad", e.message); return; }
+    try { startMap(); } catch (e) { d("bad", "지도 시작 실패: " + e.message + " (인증키·등록 주소 확인)"); return; }
+    CS = window.Cesium || (window.vw && window.vw.Cesium) || null;
+    d(CS ? "ok" : "bad", CS ? "Cesium 전역 객체 접근 가능 (버전 " + (CS.VERSION || "?") + ")" : "Cesium 전역 객체를 찾지 못함 → 카메라 이동만 가능, 기체 표시 불가");
+    for (let i = 0; i < 40 && !viewer; i++) {                                    // 지도 초기화를 기다리며 최대 20초 탐색
+      await new Promise((r) => setTimeout(r, 500));
+      const f = findViewer(); if (f) { viewer = f[1]; d("ok", "Cesium 뷰어 발견: " + f[0]); }
+    }
+    if (!viewer) d("bad", "Cesium 뷰어를 찾지 못함 → 브이월드 기본 카메라 이동(moveTo)만 시도합니다");
+    if (viewer && CS) { initScene(); if (QUALITY_TUNE) { tuneQuality(); setInterval(tuneQuality, 3000); } }   // 3초마다 재적용 (타일셋이 나중에 추가되는 경우 대비)
+    dirty = true;
+    if (viewer && CS) prewarm();                                                 // 재생 전에 주요 장면의 건물 타일을 미리 불러옴
+  }
+
+  // ================================================================
+  //  시나리오 B (공중 추돌 → 구조 비행차량) — 앞선 시뮬레이션과 같은 타임라인
+  // ================================================================
+  const mLat = 1 / 111320, mLon = 1 / (111320 * Math.cos(37.566 * Math.PI / 180));
+  const clamp = (v, a, b) => Math.min(b, Math.max(a, v)), lerp = (a, b, u) => a + (b - a) * u, smooth = (u) => u * u * (3 - 2 * u);
+  const fmt = (s) => { s = Math.round(s); return String(Math.floor(s / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0"); };
+  const mixP = (a, b, u) => ({ lon: lerp(a.lon, b.lon, u), lat: lerp(a.lat, b.lat, u), alt: lerp(a.alt || 0, b.alt || 0, u) });
+  const shift = (p, de, dn) => ({ lon: p.lon + de * mLon, lat: p.lat + dn * mLat });
+  const compass = (h) => ["북", "북동", "동", "남동", "남", "남서", "서", "북서"][Math.round(h / 45) % 8];
+  const rad = (x) => x * Math.PI / 180;
+  let BASE = 40;                                                              // 지면의 타원체고(가정). 건물에 박히거나 떠 보이면 진단 패널에서 조정
+  byId("base").oninput = (e) => { BASE = +e.target.value || 0; dirty = true; };
+
+  const C = { lon: 126.9772, lat: 37.5662 };
+  const A0 = { lon: 126.9690, lat: 37.5662 }, B0 = { lon: 126.9772, lat: 37.5595 };
+  const AE = shift(C, -30, 0), BE = shift(C, 0, -30), MB = shift(C, -15, -15);
+  const SB = { lon: 126.9830, lat: 37.5600 }, LB = { lon: 126.9700, lat: 37.5710 };
+  const DA = { lon: 126.9850, lat: 37.5662 }, DB = { lon: 126.9772, lat: 37.5740 };
+  const TETHER = 33;
+
+  function posBR(t) {
+    if (t < 16) return null;
+    if (t < 17) return { lon: SB.lon, lat: SB.lat, alt: 2 };
+    if (t < 30) { const u = smooth((t - 17) / 13), al = lerp(2, 180, smooth(clamp((t - 17) / 8, 0, 1))); return { lon: lerp(SB.lon, MB.lon, u), lat: lerp(SB.lat, MB.lat, u), alt: al }; }
+    if (t < 34) return { lon: MB.lon, lat: MB.lat, alt: 180 + Math.sin((t - 30) * Math.PI) * 1.2 };
+    if (t < 46) { const u = smooth((t - 34) / 12); return { lon: lerp(MB.lon, LB.lon, u), lat: lerp(MB.lat, LB.lat, u), alt: lerp(180, 40, u) }; }
+    if (t < 50) { const u = smooth((t - 46) / 4); return { lon: LB.lon, lat: LB.lat, alt: lerp(40, 33, u) }; }
+    return { lon: LB.lon, lat: LB.lat, alt: 33 };
+  }
+  function posBA(t) {
+    if (t >= 30) { const r = posBR(t), p = shift(r, -15, 15); return { ...p, alt: r.alt - TETHER }; }
+    if (t < 12) { const u = t / 12; return { lon: lerp(A0.lon, AE.lon, u), lat: lerp(A0.lat, AE.lat, u), alt: 150 }; }
+    const sag = lerp(150, 147, smooth(clamp((t - 12) / 3, 0, 1)));
+    const shake = t < 13.2 ? Math.sin(t * 50) * 1.5 * (1 - (t - 12) / 1.2) : 0;
+    return { lon: AE.lon, lat: AE.lat, alt: sag + shake + (t > 13.2 ? Math.sin((t - 13) * 1.5) * 0.5 : 0) };
+  }
+  function posBB(t) {
+    if (t >= 30) { const r = posBR(t), p = shift(r, 15, -15); return { ...p, alt: r.alt - (TETHER - 6) }; }
+    if (t < 12) { const u = t / 12; return { lon: B0.lon, lat: lerp(B0.lat, BE.lat, u), alt: 156 }; }
+    const sag = lerp(156, 153, smooth(clamp((t - 12) / 3, 0, 1)));
+    const shake = t < 13.2 ? Math.sin(t * 47) * 1.5 * (1 - (t - 12) / 1.2) : 0;
+    return { lon: BE.lon, lat: BE.lat, alt: sag + shake + (t > 13.2 ? Math.sin((t - 13) * 1.3 + 1) * 0.5 : 0) };
+  }
+  const mTime = (t) => { const K = [[13, 0], [17, 60], [30, 300], [34, 360], [46, 720], [50, 840]]; if (t <= 13) return 0; for (let i = 0; i < K.length - 1; i++) if (t <= K[i + 1][0]) return lerp(K[i][1], K[i + 1][1], (t - K[i][0]) / (K[i + 1][0] - K[i][0])); return 840; };
+  const stB = (t) => (t < 12 ? "정상 비행" : t < 30 ? "기동 불가 · 체공 중" : t < 34 ? "도킹 연결" : t < 50 ? "견인 이송 중" : "안전 착륙");
+  const colB = (own) => (t) => (t >= 12 && t < 30 ? (Math.floor(t * 3) % 2 ? "#ff3b3b" : own) : own);
+  const OBJS = [
+    { id: "a", name: "비행차량 A", base: "#7cc0ff", len: 100, wid: 70, thick: 24, hdg0: 90, pos: posBA, color: colB("#7cc0ff"), status: stB },
+    { id: "b", name: "비행차량 B", base: "#c792ff", len: 100, wid: 70, thick: 24, hdg0: 0, pos: posBB, color: colB("#c792ff"), status: stB },
+    { id: "r", name: "구조 비행차량", base: "#4cd9a0", len: 140, wid: 100, thick: 30, hdg0: 315, pos: posBR, siren: true, color: () => "#4cd9a0",
+      status: (t) => (t < 30 ? "3D 좌표로 출동 중" : t < 34 ? "도킹 중" : t < 50 ? "두 기체 견인 이송" : "착륙 완료") }
+  ];
+  const DESTS = [
+    { lon: DA.lon, lat: DA.lat, text: "◎ A 목적지", color: "#7cc0ff", show: (t) => t < 13 },
+    { lon: DB.lon, lat: DB.lat, text: "◎ B 목적지", color: "#c792ff", show: (t) => t < 13 },
+    { lon: SB.lon, lat: SB.lat, text: "🚁 구조 거점", color: "#4cd9a0", show: () => true },
+    { lon: LB.lon, lat: LB.lat, text: "🅷 안전 착륙지", color: "#ffd34d", show: (t) => t >= 14 }
+  ];
+  const ROUTES = [
+    { color: "#7cc0ff", pts: [A0, DA], show: (t) => t < 13 }, { color: "#c792ff", pts: [B0, DB], show: (t) => t < 13 },
+    { color: "#4cd9a0", pts: [SB, MB], show: (t) => t >= 16 && t < 34 }, { color: "#ffd34d", pts: [MB, LB], show: (t) => t >= 30 && t < 50 }
+  ];
+  const SCENES = [
+    [0, "서울 도심 상공 항로", "두 대의 비행차량이 교차하는 항로로 접근합니다. 점선은 예정 경로, ◎는 목적지입니다."],
+    [8, "교차 항로 접근", "같은 고도(약 150m)에서 서로 직각으로 접근합니다. 노란 앞머리 블록이 진행 방향입니다."],
+    [12, "공중 추돌", "가벼운 추돌로 추락은 하지 않지만, 두 기체 모두 기동이 불가능한 상태입니다. 3D 좌표가 자동 전송됩니다."],
+    [17, "구조 비행차량 출동", "두 기체의 정확한 3D 좌표(고도 Z 포함)를 받아 구조 거점에서 바로 출동합니다."],
+    [22, "상부 접근", "고도를 알기 때문에 두 기체의 위쪽에서 안전하게 접근합니다. 2D 위치만으로는 2차 충돌 위험이 있습니다."],
+    [30, "도킹 · 견인", "구조 비행차량이 두 기체를 연결해 함께 이동할 준비를 합니다."],
+    [34, "안전 착륙지로 이송", "세 기체가 함께 이동하며 천천히 고도를 낮춥니다."],
+    [48, "안전 착륙", "두 기체 모두 안전하게 착륙지에 내려앉습니다."],
+    [50, "구조 완료", "추락 없이, 2차 사고 없이 구조를 마쳤습니다."]
+  ];
+  const T_END = 54;
+
+  // ----- 카메라 키프레임: 줌 대신 '대상까지의 거리(range)'와 '기울기(pitch, 0=수직 내려다봄)'로 표현 -----
+  const KF = [
+    { t: 0, z: 14.8, b: -20, p: 52, f: 1, c: [126.9772, 37.5640] }, { t: 3, z: 15.2, b: -5, p: 58, f: 1, c: [126.9772, 37.5640] },
+    { t: 12, z: 16.9, b: 45, p: 64, f: 1, c: [126.9772, 37.5640] }, { t: 14, z: 17.2, b: 80, p: 66, f: 1, c: [126.9772, 37.5640] },
+    { t: 17, z: 16.0, b: 110, p: 62, f: 1, c: [126.9772, 37.5640] }, { t: 28, z: 17.0, b: 150, p: 64, f: 1, c: [126.9772, 37.5640] },
+    { t: 34, z: 17.6, b: 190, p: 66, f: 1, c: [126.9772, 37.5640] }, { t: 44, z: 16.2, b: 230, p: 62, f: 1, c: [126.9772, 37.5640] },
+    { t: 48, z: 17.2, b: 260, p: 64, f: 1, c: [126.9772, 37.5640] }, { t: 54, z: 16.6, b: 290, p: 58, f: 1, c: [126.9772, 37.5640] }
+  ];
+  function camAt(t) {
+    let i = 0; while (i < KF.length - 2 && t >= KF[i + 1].t) i++;
+    const a = KF[i], b = KF[i + 1], e = smooth(clamp((t - a.t) / (b.t - a.t), 0, 1));
+    return { c: [lerp(a.c[0], b.c[0], e), lerp(a.c[1], b.c[1], e)], z: lerp(a.z, b.z, e), b: lerp(a.b, b.b, e), p: lerp(a.p, b.p, e), f: lerp(a.f, b.f, e) };
+  }
+  function focus(t) {
+    const a = posBA(t), b = posBB(t), r = posBR(t), ab = mixP(a, b, 0.5);
+    if (!r || t < 16) return ab;
+    const mid = mixP(r, ab, 0.5);
+    if (t < 20) return mixP(ab, mid, smooth((t - 16) / 4));
+    if (t < 28) return mid;
+    if (t < 32) return mixP(mid, r, smooth((t - 28) / 4));
+    return r;
+  }
+  function heading(o, t) {
+    for (let k = 0; k <= 40; k++) {
+      const tt = t - k * 0.5, a = o.pos(Math.max(0, tt - 0.2)), b = o.pos(Math.max(0, tt + 0.2));
+      if (a && b) { const de = (b.lon - a.lon) / mLon, dn = (b.lat - a.lat) / mLat; if (Math.hypot(de, dn) > 0.6) return (Math.atan2(de, dn) * 180 / Math.PI + 360) % 360; }
+    }
+    return o.hdg0;
+  }
+
+  // ----- 카메라를 "대상 + 거리 + 방향"에서 "카메라 눈 위치"로 변환 -----
+  function camEye(t, kOver) {
+    const k = kOver || camAt(t), f = focus(t);
+    const lon = lerp(k.c[0], f.lon, k.f), lat = lerp(k.c[1], f.lat, k.f), alt = BASE + f.alt * k.f;
+    const range = 850 * Math.pow(2, 16 - k.z);                                  // 줌 → 거리 근사
+    const horiz = range * Math.sin(rad(k.p)), vert = range * Math.cos(rad(k.p));
+    const fwdE = Math.sin(rad(k.b)), fwdN = Math.cos(rad(k.b));
+    return { lon: lon - fwdE * horiz * mLon, lat: lat - fwdN * horiz * mLat, alt: alt + vert, heading: k.b, pitch: -(90 - k.p) };
+  }
+  function moveCamera(e) {
+    if (viewer && CS) {
+      viewer.camera.setView({ destination: CS.Cartesian3.fromDegrees(e.lon, e.lat, e.alt), orientation: { heading: rad(e.heading), pitch: rad(e.pitch), roll: 0 } });
+    } else if (map && typeof map.moveTo === "function") {
+      try { map.moveTo(new window.vw.CameraPosition(new window.vw.CoordZ(e.lon, e.lat, e.alt), new window.vw.Direction(e.heading, e.pitch, 0))); } catch (er) { /* 첫 실패만 로그 */ if (!moveCamera.err) { moveCamera.err = 1; d("bad", "moveTo 실패: " + er.message); } }
+    }
+  }
+
+  // ================================================================
+  //  Cesium 엔티티로 블록형 비행차량·이름표·빛기둥 그리기
+  // ================================================================
+  const V = [];                                                                  // 기체별 엔티티 묶음
+  let dstEnt = [], routeEnt = [], ringEnt = null;
+
+  // ================================================================
+  //  건물 해상도 올리기: 타일 상세도 기준을 강화하고 화면 해상도를 높임
+  // ================================================================
+
+  // ================================================================
+  //  프리로드: 재생 전에 카메라를 주요 장면에 잠깐씩 보내 건물 타일을 미리 받아 둠
+  // ================================================================
+  let orbitS = null;                                                               // 프리로드 중 회전 카메라 상태 {z,p,b}. null 이면 회전 안 함
+  const START_K = { z: 14.8, p: 52, b: -20 };                                      // 시작 구도 (KF 첫 항목과 같아야 끊김 없음)
+  const orbitPose = (ph) => ({ c: [126.9772, 37.5640], f: 1, z: START_K.z + 0.6 * (1 - Math.cos(ph)), p: START_K.p + 4 * Math.sin(ph), b: START_K.b + ph * 180 / Math.PI });
+  async function prewarm() {
+    const btn = byId("playBtn"), ov = document.createElement("div");
+    ov.style.cssText = "position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:99;background:rgba(8,16,42,.92);color:#ffd34d;font:700 14px sans-serif;padding:9px 16px;border-radius:10px;border:1px solid #2b3a66";
+    document.body.appendChild(ov); btn.disabled = true; t = 0;
+    const tilesets = () => { const r = [], pr = viewer.scene.primitives; for (let i = 0; i < pr.length; i++) { const x = pr.get(i); if (x && x.maximumScreenSpaceError !== undefined) r.push(x); } return r; };
+    const idle = () => { try { const g = viewer.scene.globe; return (!g || g.tilesLoaded !== false) && tilesets().every((x) => x.tilesLoaded !== false); } catch (e) { return true; } };
+    const MIN_MS = 6000, MAX_MS = 45000, STABLE_MS = 1500, LAP_MS = 11000;           // 최소 6초 · 최대 45초 · 로딩 완료 상태가 1.5초 이어지면 종료 · 한 바퀴 11초
+    const t0 = performance.now(); let idleSince = 0, ph = 0, prev = t0, endPose = null;
+    await new Promise((resolve) => {
+      const step = (now) => {
+        const dt = now - prev; prev = now; const el = now - t0;
+        ph += dt / LAP_MS * 2 * Math.PI;                                            // 시간에 비례해 계속 회전
+        orbitS = orbitPose(ph); dirty = true;
+        if (idle()) { if (!idleSince) idleSince = now; } else idleSince = 0;
+        const done = el >= MAX_MS || (el >= MIN_MS && idleSince && now - idleSince >= STABLE_MS);
+        ov.textContent = "⏳ 서울 3D 건물 불러오는 중… (" + Math.floor(el / 1000) + "초)";
+        if (!done) requestAnimationFrame(step); else { endPose = orbitS; resolve(); }
+      };
+      requestAnimationFrame(step);
+    });
+    // 현재 회전 위치에서 시작 구도로 1.4초 동안 부드럽게 이동 (방향은 가까운 쪽으로 회전)
+    const db = ((START_K.b - endPose.b) % 360 + 540) % 360 - 180, tb = performance.now();
+    await new Promise((resolve) => {
+      const step = (now) => {
+        const u = smooth(clamp((now - tb) / 1400, 0, 1));
+        orbitS = { c: endPose.c, f: 1, z: lerp(endPose.z, START_K.z, u), p: lerp(endPose.p, START_K.p, u), b: endPose.b + db * u }; dirty = true;
+        if (u < 1) requestAnimationFrame(step); else resolve();
+      };
+      requestAnimationFrame(step);
+    });
+    orbitS = null; t = 0; dirty = true;
+    ov.textContent = "✅ 준비 완료 — ▶ 를 눌러 시작하세요"; btn.disabled = false;
+    setTimeout(() => ov.remove(), 2500);
+  }
+
+  const QUALITY_TUNE = false;                                                      // true 로 바꾸면 고화질 설정 적용 (부하 큼). 기본은 브이월드 원래 화질
+  let tuned = 0;
+  function tuneQuality() {
+    try {
+      const sc = viewer.scene, prims = sc.primitives, found = [];
+      for (let i = 0; i < prims.length; i++) {
+        const pr = prims.get(i);
+        if (pr && pr.maximumScreenSpaceError !== undefined && typeof pr.tileLoaded !== "undefined") found.push(pr);   // 3D Tiles 로 추정되는 객체
+        else if (pr && pr.maximumScreenSpaceError !== undefined) found.push(pr);
+      }
+      found.forEach((ts) => {
+        ts.maximumScreenSpaceError = 2;                       // 기본 16 → 2 : 더 세밀한 타일을 요청 (숫자가 작을수록 선명, 데이터·GPU 부담 증가)
+        if ("dynamicScreenSpaceError" in ts) ts.dynamicScreenSpaceError = false;   // 먼 곳 해상도 낮추는 기능 끔
+        if ("skipLevelOfDetail" in ts) ts.skipLevelOfDetail = false;               // 저해상도 단계 건너뛰기 끔
+        if ("preloadWhenHidden" in ts) ts.preloadWhenHidden = true;
+        if ("cullRequestsWhileMoving" in ts) ts.cullRequestsWhileMoving = false;   // 카메라 이동 중에도 타일 요청 계속
+        if ("foveatedScreenSpaceError" in ts) ts.foveatedScreenSpaceError = false;
+      });
+      if (sc.globe) sc.globe.maximumScreenSpaceError = 1;     // 지형·항공영상도 선명하게 (기본 2)
+      viewer.resolutionScale = Math.max(window.devicePixelRatio || 1, 1.5);   // 렌더 해상도 상향 (고DPI/계단 현상 완화)
+      if (sc.postProcessStages && sc.postProcessStages.fxaa) sc.postProcessStages.fxaa.enabled = true;   // 외곽선 계단 완화
+      if (!tuned || tuned !== found.length) { tuned = found.length; d("ok", "화질 설정 적용: 3D 타일 후보 " + found.length + "개 (오차기준 2)"); }
+    } catch (e) { if (!tuneQuality.err) { tuneQuality.err = 1; d("bad", "화질 설정 실패: " + e.message); } }
+  }
+
+  const CAR_COLORS = { glass: "#2b2432", dark: "#15171c", head: "#f4fbff", tail: "#ff2a2a", pad: "#4fe3ff", light1: "#ff3b3b", light2: "#3b8bff", cross: "#ff3b3b" };
+  // ================================================================
+  //  로드스터 풍 각진 쐐기형 차체 메쉬 (좌표: x=오른쪽, y=앞쪽(진행 방향), z=위쪽, 원점=차체 중심, 단위 m)
+  //  단면 6각형을 앞→뒤 8개 지점에 놓고 면으로 이어 "깎은" 듯한 각진 형태를 만듦
+  // ================================================================
+  function carMesh(L, W, H, siren) {
+    const G = { body: [], glass: [], dark: [], head: [], tail: [], pad: [], light1: [], light2: [], cross: [] };
+    const hw = W / 2;
+    // 지점: [앞뒤위치(L 비율), 하부폭, 어깨폭, 지붕폭(폭 비율), 하부높이, 어깨높이, 지붕높이(H 비율)]
+    const ST = [
+      [0.50, 0.62, 0.66, 0.52, 0.10, 0.24, 0.26],   // 코 끝(낮고 뾰족)
+      [0.46, 0.78, 0.90, 0.72, 0.08, 0.34, 0.36],
+      [0.30, 0.86, 1.00, 0.84, 0.06, 0.42, 0.44],   // 후드
+      [0.14, 0.88, 1.00, 0.86, 0.06, 0.46, 0.48],   // 앞유리 시작
+      [-0.02, 0.86, 1.00, 0.62, 0.06, 0.48, 0.88],  // 지붕 앞
+      [-0.22, 0.86, 1.00, 0.60, 0.06, 0.48, 0.86],  // 지붕 뒤
+      [-0.40, 0.86, 1.00, 0.82, 0.06, 0.48, 0.58],  // 뒤 데크
+      [-0.50, 0.80, 0.96, 0.86, 0.08, 0.48, 0.54]   // 꼬리
+    ];
+
+    const ring = (s) => {
+      const y = s[0] * L, bw = s[1] * hw, sw = s[2] * hw, rw = s[3] * hw, zb = s[4] * H - H / 2, zs = s[5] * H - H / 2, zr = s[6] * H - H / 2;
+      return [[-bw, y, zb], [bw, y, zb], [sw, y, zs], [rw, y, zr], [-rw, y, zr], [-sw, y, zs]];
+    };
+    const R = ST.map(ring);
+    const quad = (g, a, b, c, d) => { G[g].push([a, b, c], [a, c, d]); };
+    const poly = (g, pts) => { for (let i = 1; i < pts.length - 1; i++) G[g].push([pts[0], pts[i], pts[i + 1]]); };
+    for (let i = 0; i < ST.length - 1; i++) {
+      const A = R[i], B = R[i + 1], cabin = i >= 3 && i <= 5;                       // 3~5 구간 = 유리 온실(앞유리·지붕·뒷유리)
+      quad("dark", A[0], A[1], B[1], B[0]);                                          // 바닥
+      quad("body", A[1], A[2], B[2], B[1]);                                          // 오른쪽 아래 옆면
+      quad(cabin ? "glass" : "body", A[2], A[3], B[3], B[2]);                        // 오른쪽 위 옆면(창)
+      quad(cabin ? "glass" : "body", A[3], A[4], B[4], B[3]);                        // 윗면(후드/유리 지붕/데크)
+      quad(cabin ? "glass" : "body", A[4], A[5], B[5], B[4]);                        // 왼쪽 위 옆면(창)
+      quad("body", A[5], A[0], B[0], B[5]);                                          // 왼쪽 아래 옆면
+    }
+    poly("body", R[0].slice().reverse());                                            // 코 앞면
+    poly("dark", R[ST.length - 1]);                                                  // 꼬리 뒷면
+    const box = (g, cx, cy, cz, sx, sy, sz) => {
+      const x0 = cx - sx / 2, x1 = cx + sx / 2, y0 = cy - sy / 2, y1 = cy + sy / 2, z0 = cz - sz / 2, z1 = cz + sz / 2;
+      const p = [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]];
+      quad(g, p[0], p[1], p[2], p[3]); quad(g, p[4], p[5], p[6], p[7]); quad(g, p[0], p[1], p[5], p[4]);
+      quad(g, p[2], p[3], p[7], p[6]); quad(g, p[1], p[2], p[6], p[5]); quad(g, p[3], p[0], p[4], p[7]);
+    };
+    const prismX = (g, cx, cy, cz, rad, wid) => {                                   // x축 방향 8각 기둥(바퀴)
+      const a = [], b = [];
+      for (let k = 0; k < 8; k++) { const ang = k * Math.PI / 4 + Math.PI / 8; a.push([cx - wid / 2, cy + rad * Math.cos(ang), cz + rad * Math.sin(ang)]); b.push([cx + wid / 2, cy + rad * Math.cos(ang), cz + rad * Math.sin(ang)]); }
+      for (let k = 0; k < 8; k++) quad(g, a[k], a[(k + 1) % 8], b[(k + 1) % 8], b[k]);
+      poly(g, a); poly(g, b);
+    };
+    const prismZ = (g, cx, cy, cz, rad, hgt) => {                                   // z축 방향 8각 원판(양력 패드)
+      const a = [], b = [];
+      for (let k = 0; k < 8; k++) { const ang = k * Math.PI / 4; a.push([cx + rad * Math.cos(ang), cy + rad * Math.sin(ang), cz - hgt / 2]); b.push([cx + rad * Math.cos(ang), cy + rad * Math.sin(ang), cz + hgt / 2]); }
+      for (let k = 0; k < 8; k++) quad(g, a[k], a[(k + 1) % 8], b[(k + 1) % 8], b[k]);
+      poly(g, a); poly(g, b);
+    };
+    const zBot = ST[3][4] * H - H / 2, wr = 0.065 * L;
+    for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+      prismX("dark", sx * (hw * 0.92 - 0.0375 * L), sy * 0.30 * L, zBot + wr * 0.7, wr, 0.075 * L);   // 바퀴
+      prismZ("pad", sx * hw * 0.40, sy * 0.30 * L, zBot - 0.9, 0.065 * L, 0.5);                      // 아래로 빛나는 양력 패드
+    }
+    box("head", 0, 0.497 * L, 0.20 * H - H / 2, 0.95 * hw, 0.012 * L, 0.035 * H);    // 앞 헤드라이트 띠
+    box("tail", 0, -0.503 * L, 0.46 * H - H / 2, 1.6 * hw, 0.012 * L, 0.06 * H);     // 뒤 테일라이트 띠
+    if (siren) {                                                                      // 구조차: 지붕 경광등 + 십자
+      const rz = 0.88 * H - H / 2 + 0.03 * H;
+      box("light1", -0.2 * hw, -0.12 * L, rz, 0.34 * hw, 0.05 * L, 0.06 * H);
+      box("light2", 0.2 * hw, -0.12 * L, rz, 0.34 * hw, 0.05 * L, 0.06 * H);
+      box("cross", 0, 0.06 * L, rz - 0.02 * H, 0.9 * hw, 0.05 * L, 0.03 * H);
+      box("cross", 0, 0.06 * L, rz - 0.02 * H, 0.22 * hw, 0.22 * L, 0.03 * H);
+    }
+    return G;
+  }
+
+  function initScene() {
+    const col = (s, a) => CS.Color.fromCssColorString(s).withAlpha(a === undefined ? 1 : a);
+    OBJS.forEach((o) => {
+      const L = o.len, W = 0.46 * L, H = 0.27 * L;                                   // 길이 대비 폭·높이 (스포츠카 비율)
+      const G = carMesh(L, W, H, !!o.siren), insts = [], ids = [];
+      Object.keys(G).forEach((g) => {
+        const tris = G[g]; if (!tris.length) return;
+        const pos = new Float64Array(tris.length * 9), nor = new Float32Array(tris.length * 9), idx = new Uint32Array(tris.length * 3);
+        tris.forEach((tr, i) => {                                                       // 면마다 정점을 따로 둬서 각진(flat) 음영을 만듦
+          const A = tr[0], B = tr[1], C = tr[2];
+          const u = [B[0] - A[0], B[1] - A[1], B[2] - A[2]], w = [C[0] - A[0], C[1] - A[1], C[2] - A[2]];
+          let n = [u[1] * w[2] - u[2] * w[1], u[2] * w[0] - u[0] * w[2], u[0] * w[1] - u[1] * w[0]]; const m = Math.hypot(n[0], n[1], n[2]) || 1; n = [n[0] / m, n[1] / m, n[2] / m];
+          [A, B, C].forEach((q, k) => { const j = i * 9 + k * 3; pos[j] = q[0]; pos[j + 1] = q[1]; pos[j + 2] = q[2]; nor[j] = n[0]; nor[j + 1] = n[1]; nor[j + 2] = n[2]; idx[i * 3 + k] = i * 3 + k; });
+        });
+        const geom = new CS.Geometry({ attributes: new CS.GeometryAttributes({
+          position: new CS.GeometryAttribute({ componentDatatype: CS.ComponentDatatype.DOUBLE, componentsPerAttribute: 3, values: pos }),
+          normal: new CS.GeometryAttribute({ componentDatatype: CS.ComponentDatatype.FLOAT, componentsPerAttribute: 3, values: nor }) }),
+          indices: idx, primitiveType: CS.PrimitiveType.TRIANGLES, boundingSphere: CS.BoundingSphere.fromVertices(Array.from(pos)) });
+        const c0 = g === "body" ? o.base : (CAR_COLORS[g] || "#888888");
+        insts.push(new CS.GeometryInstance({ geometry: geom, id: o.id + "_" + g, attributes: { color: CS.ColorGeometryInstanceAttribute.fromColor(col(c0)) } })); ids.push(g);
+      });
+      const prim = viewer.scene.primitives.add(new CS.Primitive({ geometryInstances: insts, asynchronous: false, releaseGeometryInstances: false, allowPicking: false,
+        appearance: new CS.PerInstanceColorAppearance({ translucent: false, closed: false }) }));
+      const car = { prim, ids, attrs: null, last: {}, H };
+      const bs = { pos: new CS.Cartesian3(), len: 10, ppos: new CS.Cartesian3() };                                       // 빛기둥·기둥 상태값
+      const beam = viewer.entities.add({ position: new CS.CallbackProperty(() => bs.pos, false), cylinder: { length: 260, topRadius: 9, bottomRadius: 9, material: col(o.base, 0.3) } });                    // 위로 솟는 빛기둥
+      const pole = viewer.entities.add({ position: new CS.CallbackProperty(() => bs.ppos, false), cylinder: { length: new CS.CallbackProperty(() => bs.len, false), topRadius: 3, bottomRadius: 3, material: col("#ffd34d", 0.9) } });                    // 지면~기체 기둥
+      const label = viewer.entities.add({ label: { text: o.name, font: "bold 15px sans-serif", fillColor: CS.Color.WHITE, showBackground: true,
+        backgroundColor: col("#08102a", 0.9), pixelOffset: new CS.Cartesian2(0, -10), verticalOrigin: CS.VerticalOrigin.BOTTOM, disableDepthTestDistance: Number.POSITIVE_INFINITY } });
+      V.push({ o, car, beam, pole, label, bs, lastColor: o.base });
+    });
+    DESTS.forEach((dd) => dstEnt.push(viewer.entities.add({ position: CS.Cartesian3.fromDegrees(dd.lon, dd.lat, BASE + 10), label: { text: dd.text, font: "bold 14px sans-serif", fillColor: CS.Color.fromCssColorString("#1a2440"), showBackground: true,
+      backgroundColor: col(dd.color, 0.95), verticalOrigin: CS.VerticalOrigin.BOTTOM, disableDepthTestDistance: Number.POSITIVE_INFINITY } })));
+    ROUTES.forEach((r) => routeEnt.push(viewer.entities.add({ polyline: { positions: r.pts.map((p) => CS.Cartesian3.fromDegrees(p.lon, p.lat, BASE + 5)), width: 4,
+      material: new CS.PolylineDashMaterialProperty({ color: col(r.color, 0.95) }) } })));
+    ringEnt = viewer.entities.add({ position: CS.Cartesian3.fromDegrees(C.lon, C.lat, BASE + 5), ellipse: { semiMajorAxis: 45, semiMinorAxis: 45, material: col("#4aa3ff", 0.25) } });
+    d("ok", "기체·이름표·경로 엔티티 생성 완료 (쐐기형 차체 " + V.length + "대)");
+  }
+
+  function drawObjects(t) {
+    const col = (s, a) => CS.Color.fromCssColorString(s).withAlpha(a === undefined ? 1 : a);
+    V.forEach((v) => {
+      const o = v.o, p = o.pos(t), show = !!p;
+      v.car.prim.show = show; v.beam.show = show; v.pole.show = show; v.label.show = show;
+      if (!p) return;
+      const hdg = heading(o, t), H = rad(hdg), a = BASE + p.alt, th = o.thick;
+      const center = CS.Cartesian3.fromDegrees(p.lon, p.lat, a), enu = CS.Transforms.eastNorthUpToFixedFrame(center);
+      // 차체 앞쪽(+y)이 진행 방향(나침반 방위)이 되도록 동-북-위 좌표계에서 z축 회전
+      v.car.prim.modelMatrix = CS.Matrix4.multiplyTransformation(enu, CS.Matrix4.fromRotationTranslation(CS.Matrix3.fromRotationZ(-H), CS.Cartesian3.ZERO), new CS.Matrix4());
+      const body = o.color(t), on = Math.floor(t * 4) % 2;
+      if (!v.car.attrs && v.car.prim.ready) { v.car.attrs = {}; v.car.ids.forEach((g) => (v.car.attrs[g] = v.car.prim.getGeometryInstanceAttributes(o.id + "_" + g))); }
+      if (v.car.attrs) {                                                             // 몸체 색·경광등 색만 바뀔 때 갱신
+        const setC = (g, c) => { if (v.car.attrs[g] && v.car.last[g] !== c) { v.car.attrs[g].color = CS.ColorGeometryInstanceAttribute.toValue(col(c)); v.car.last[g] = c; } };
+        setC("body", body); if (o.siren) { setC("light1", on ? "#ff3b3b" : "#3b8bff"); setC("light2", on ? "#3b8bff" : "#ff3b3b"); }
+      }
+      const pl = Math.max(p.alt - v.car.H * 0.5 - 1, 1);
+      v.bs.pos = CS.Cartesian3.fromDegrees(p.lon, p.lat, a + th + 130);
+      v.bs.len = pl; v.bs.ppos = CS.Cartesian3.fromDegrees(p.lon, p.lat, BASE + pl / 2);
+      const a2 = o.pos(Math.max(0, t - 0.2)) || p, b2 = o.pos(t + 0.2) || p, spd = Math.hypot((b2.lon - a2.lon) / mLon, (b2.lat - a2.lat) / mLat) / 0.4;
+      v.label.position = CS.Cartesian3.fromDegrees(p.lon, p.lat, a + th * 1.5);
+      v.label.label.text = o.name + "\n" + o.status(t) + "\n고도 " + p.alt.toFixed(0) + "m · " + (spd * 3.6).toFixed(0) + "km/h · " + compass(hdg);
+    });
+    DESTS.forEach((dd, i) => (dstEnt[i].show = dd.show(t))); ROUTES.forEach((r, i) => (routeEnt[i].show = r.show(t))); if (ringEnt) ringEnt.show = t >= 12;
+    try { viewer.scene.requestRender(); } catch (e) {}
+  }
+
+  // ----- 화면 위 정보 -----
+  function updateUi(t) {
+    let sc = SCENES[0]; for (const s of SCENES) if (t >= s[0]) sc = s;
+    byId("capTitle").textContent = sc[1]; byId("capText").textContent = sc[2];
+    const al = byId("alert"); let av = null;
+    if (t >= 12 && t < 14) av = ["", "💥 공중 추돌 · 두 기체 기동 불가 (추락 없음)"]; else if (t >= 14 && t < 17) av = ["warn", "📡 3D 좌표 자동 전송 · 구조 요청 접수"];
+    else if (t >= 17 && t < 30) av = ["ok", "🚑 구조 비행차량 출동 중"]; else if (t >= 30 && t < 34) av = ["ok", "🔗 도킹 · 견인 연결"];
+    else if (t >= 34 && t < 48) av = ["ok", "🛬 안전 착륙지로 이송 중"]; else if (t >= 48) av = ["ok", "✅ 안전 착륙 완료"];
+    if (av) { al.style.display = "block"; al.className = av[0]; al.textContent = av[1]; } else al.style.display = "none";
+    byId("mission").style.display = t >= 12 ? "block" : "none";
+    if (t >= 12) {
+      byId("tmM").textContent = "T+ " + fmt(mTime(t));
+      const th = [12, 13.5, 17, 30, 50]; let last = -1; th.forEach((x, i) => { if (t >= x) last = i; });
+      ["m1", "m2", "m3", "m4", "m5"].forEach((id, i) => (byId(id).className = i < last ? "done" : (i === last ? (i === 4 ? "done" : "act") : "")));
+    }
+    const fin = byId("final");
+    if (t >= 50) { fin.style.display = "flex"; byId("finalBig").textContent = "2차 사고 없이 안전 구조"; byId("finalP1").textContent = "충돌 후 착륙까지 약 " + fmt(840) + " (가정)";
+      byId("finalP2").textContent = "두 기체의 3D 좌표(고도 포함)를 알아 위에서 안전하게 접근하고 견인했습니다."; byId("finalNote").textContent = "※ 가정: 출동·접근 5분, 도킹 1분, 이송·착륙 8분, 정확도 ±3m(수평)·±5m(수직)"; }
+    else fin.style.display = "none";
+    // 기체별 좌표 블록
+    const box = byId("hudObjs");
+    if (!box.children.length) OBJS.forEach((o) => { const dv = document.createElement("div"); dv.className = "blk"; dv.style.borderLeftColor = o.base; dv.innerHTML = '<div class="nm"></div><div class="ln"></div><div class="ln"></div>'; dv.querySelector(".nm").textContent = o.name; dv.querySelector(".nm").style.color = o.base; box.appendChild(dv); });
+    OBJS.forEach((o, i) => {
+      const p = o.pos(t), el = box.children[i]; el.style.display = p ? "" : "none"; if (!p) return;
+      const a2 = o.pos(Math.max(0, t - 0.2)) || p, b2 = o.pos(t + 0.2) || p, spd = Math.hypot((b2.lon - a2.lon) / mLon, (b2.lat - a2.lat) / mLat) / 0.4, hd = heading(o, t);
+      el.children[1].textContent = "Y " + p.lat.toFixed(6) + "°  X " + p.lon.toFixed(6) + "°";
+      el.children[2].textContent = "Z 지상고 " + p.alt.toFixed(1) + "m · " + (spd * 3.6).toFixed(0) + "km/h · " + compass(hd) + " " + Math.round(hd) + "°";
+    });
+    byId("seek").value = t; byId("tlabel").textContent = Math.floor(t / 60) + ":" + String(Math.floor(t % 60)).padStart(2, "0") + " / 0:" + T_END;
+  }
+
+  function render(t) {
+    moveCamera(orbitS ? camEye(0, orbitS) : camEye(t));            // 프리로드 중에는 회전 카메라
+    if (viewer && CS && V.length) drawObjects(t);
+    updateUi(t);
+  }
+
+  // ===== 재생 루프와 컨트롤 =====
+  let playing = false, t = 0, last = 0, dirty = true;
+  function loop(ts) {
+    if (playing) { t += (ts - last) / 1000; if (t >= T_END) { t = T_END; playing = false; byId("playBtn").textContent = "▶"; } dirty = true; }
+    if (orbitS) dirty = true; last = ts; if (dirty && map) { render(t); dirty = false; }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  const play = () => { if (t >= T_END) t = 0; playing = true; byId("playBtn").textContent = "⏸"; };
+  const pause = () => { playing = false; byId("playBtn").textContent = "▶"; };
+  byId("playBtn").onclick = () => (playing ? pause() : play());
+  byId("restartBtn").onclick = () => { t = 0; dirty = true; play(); };
+  byId("seek").oninput = (e) => { t = +e.target.value; dirty = true; };
+  byId("recBtn").onclick = () => { document.body.classList.add("rec"); t = 0; dirty = true; play(); };
+  window.addEventListener("keydown", (e) => { if (e.key === "Escape") document.body.classList.remove("rec"); if (e.code === "Space") { e.preventDefault(); playing ? pause() : play(); } });
+
+  boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+# 발표자료(대본·슬라이드 제작 프롬프트·팀원 초안)는 저장소에 올리지 않는다
+발표자료/
+
+# Claude Code 로컬 설정
+.claude/settings.local.json
+
+# 파이썬 캐시
+__pycache__/
+*.pyc

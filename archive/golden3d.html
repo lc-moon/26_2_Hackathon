@@ -1,0 +1,431 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>3D 골든타임 · 초정밀 3축 위치 공유 (프로토타입)</title>
+<!-- CesiumJS(미세먼지 캡스톤에서 쓰던 3D 지도 라이브러리)는 아래 스크립트에서 여러 CDN을 순서대로 시도해 불러옵니다 -->
+<style>
+  :root {
+    --bg: rgba(12, 22, 44, .88);
+    --line: #2a4070;
+    --text: #eef2fb;
+    --sub: #a9b9db;
+    --accent: #ffd34d;
+    --danger: #ff5c5c;
+    --ok: #4cd9a0;
+    --blue: #4aa3ff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: #0f1b33; color: var(--text);
+    font-family: "Pretendard", "Noto Sans KR", system-ui, sans-serif; }
+  #cesium { position: absolute; inset: 0; }
+
+  /* 떠 있는 패널 */
+  .panel {
+    position: absolute; z-index: 10; background: var(--bg); border: 1px solid var(--line);
+    border-radius: 14px; padding: 14px; backdrop-filter: blur(6px); overflow: auto;
+  }
+  .left { top: 12px; left: 12px; width: 310px; max-height: calc(100% - 24px); }
+  .right { top: 12px; right: 12px; width: 330px; max-height: calc(100% - 24px); }
+  @media (max-width: 860px) {
+    .left { width: calc(100% - 24px); max-height: 40%; }
+    .right { top: auto; bottom: 12px; width: calc(100% - 24px); max-height: 42%; }
+  }
+  h1 { margin: 0; font-size: 18px; }
+  h1 span { color: var(--accent); }
+  .sub { margin: 4px 0 10px; font-size: 12px; color: var(--sub); }
+  .sec { font-size: 12px; font-weight: 700; color: var(--accent); margin: 12px 0 6px; }
+
+  button {
+    cursor: pointer; border: 1px solid var(--line); border-radius: 10px; padding: 9px 10px;
+    font-weight: 700; font-size: 13px; background: #14284f; color: var(--text); font-family: inherit;
+  }
+  button:hover { border-color: var(--accent); }
+  button.on { background: var(--accent); color: #1a2440; border-color: var(--accent); }
+  .scen { display: grid; gap: 6px; }
+  .scen button { text-align: left; }
+  .scen small { display: block; font-weight: 400; opacity: .8; }
+  .seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #sosBtn { width: 100%; margin-top: 12px; background: var(--danger); border-color: var(--danger); color: #fff; font-size: 14px; padding: 12px; }
+  #sosBtn.sent { background: var(--ok); border-color: var(--ok); color: #0b2a20; }
+
+  /* 좌표 표시 */
+  .coord { display: grid; grid-template-columns: 62px 1fr; gap: 4px 8px; font-size: 13px; }
+  .coord b { color: var(--sub); font-weight: 600; }
+  .coord span { font-family: ui-monospace, Consolas, monospace; text-align: right; }
+  .axis-x { color: #ff8a8a; } .axis-y { color: #8aff9d; } .axis-z { color: #8ac4ff; }
+  .status { margin-top: 8px; padding: 8px 10px; border-radius: 8px; background: #0b1630; font-size: 13px; }
+
+  /* 비교 막대 */
+  .cmp { font-size: 12px; color: var(--sub); }
+  .row { margin: 8px 0; }
+  .row .tr { height: 12px; background: #0b1630; border-radius: 7px; overflow: hidden; margin-top: 4px; }
+  .row .tr i { display: block; height: 100%; border-radius: 7px; transition: width .5s; }
+  .b2d { background: #ff8a5c; } .b3d { background: var(--ok); }
+  .big { color: var(--accent); font-weight: 800; font-size: 16px; }
+
+  textarea { width: 100%; height: 86px; background: #0b1630; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px; font-size: 12px; font-family: ui-monospace, Consolas, monospace; resize: none; }
+  input[type=text] { width: 100%; background: #0b1630; color: var(--text); border: 1px solid var(--line);
+    border-radius: 8px; padding: 8px; font-size: 12px; }
+  details { margin-top: 12px; font-size: 12px; color: var(--sub); }
+  summary { cursor: pointer; }
+  .note { margin-top: 10px; font-size: 11px; color: var(--sub); line-height: 1.5; }
+  #loadErr { display: none; position: absolute; z-index: 20; inset: 40% 10% auto; padding: 20px; background: #3a1010; border: 1px solid var(--danger); border-radius: 12px; text-align: center; }
+</style>
+</head>
+<body>
+
+<div id="loadErr">CesiumJS를 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 새로고침해 주세요.</div>
+<div id="cesium"></div>
+
+<!-- 왼쪽: 상황 선택 -->
+<div class="panel left">
+  <h1>3D <span>골든타임</span></h1>
+  <p class="sub">초정밀 3D(X·Y·Z) 위치로 수색 지연을 줄이는 구조 요청 프로토타입 · 서울</p>
+
+  <div class="sec">① 사고 상황 선택</div>
+  <div class="scen">
+    <button data-sc="city" class="on">🏙️ 빌딩 숲 · 강남<small>고층 건물 외벽에 걸림 (지상고 124m)</small></button>
+    <button data-sc="fall">🌉 한강 상공 추락 · 여의도<small>체공 → 추락 → 지면 도달</small></button>
+    <button data-sc="mountain">⛰️ 산악 능선 · 북한산<small>백운대 부근, 접근 어려운 지형</small></button>
+  </div>
+
+  <div class="sec">② 위치 방식 비교</div>
+  <div class="seg">
+    <button id="m2d">기존 2D GPS</button>
+    <button id="m3d" class="on">3D 초정밀</button>
+  </div>
+
+  <button id="sosBtn">🆘 사고 발생 · 구조대에 3D 좌표 전송</button>
+
+  <details>
+    <summary>⚙️ (선택) 실제 지형·3D 건물 켜기</summary>
+    <p style="margin:8px 0 6px">Cesium Ion 토큰을 넣으면 실제 지형과 건물이 표시됩니다. 토큰은 이 페이지에서만 쓰이고 저장되지 않습니다.</p>
+    <input type="text" id="token" placeholder="Cesium Ion 액세스 토큰">
+    <button id="tokenBtn" style="margin-top:6px;width:100%">적용</button>
+    <div id="tokenMsg" style="margin-top:6px"></div>
+  </details>
+</div>
+
+<!-- 오른쪽: 실시간 데이터 -->
+<div class="panel right">
+  <div class="sec" style="margin-top:0">📡 실시간 3축 좌표</div>
+  <div class="coord">
+    <b class="axis-y">Y 위도</b><span id="vLat">-</span>
+    <b class="axis-x">X 경도</b><span id="vLon">-</span>
+    <b class="axis-z">Z 해발</b><span id="vAlt">-</span>
+    <b class="axis-z">지상고</b><span id="vAgl">-</span>
+    <b>수직 속도</b><span id="vVz">-</span>
+    <b>정확도</b><span>±3m(수평) ±5m(수직)</span>
+  </div>
+  <div class="status" id="vStat">-</div>
+
+  <div class="sec">🔍 수색해야 할 공간 비교</div>
+  <div class="cmp">
+    <div class="row">기존 2D GPS: 지상 위치만 알고 높이는 모름
+      <div class="tr"><i class="b2d" style="width:100%"></i></div></div>
+    <div class="row">3D 초정밀: 고도까지 특정
+      <div class="tr"><i class="b3d" id="bar3d" style="width:5%"></i></div></div>
+    <div>수색 후보 공간이 약 <span class="big" id="ratio">-</span> 좁아집니다</div>
+    <div id="cityTime" style="margin-top:6px"></div>
+  </div>
+
+  <div class="sec">📨 구조대에 전달되는 메시지</div>
+  <textarea id="sosMsg" readonly placeholder="위의 '구조대에 3D 좌표 전송'을 누르면 표시됩니다."></textarea>
+  <div style="display:flex;gap:6px;margin-top:6px;align-items:center">
+    <button id="copyBtn" style="flex:1">📋 복사</button>
+    <span id="sosTimer" style="font-size:12px;color:var(--sub)"></span>
+  </div>
+
+  <p class="note">
+    ※ 시뮬레이션입니다. 좌표·고도·정확도·수색 시간은 모두 가상의 가정값이며, 건물은 가상 모델입니다(토큰 입력 시 실제 건물 표시).
+    지도는 OpenStreetMap 타일을 사용합니다.
+  </p>
+</div>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  // ===== CesiumJS 불러오기: 한 곳이 막혀 있으면 다음 주소로 자동 재시도 =====
+  const BASES = [
+    "https://cdn.jsdelivr.net/npm/cesium@1.120.0/Build/Cesium/",
+    "https://unpkg.com/cesium@1.120.0/Build/Cesium/",
+    "https://cesium.com/downloads/cesiumjs/releases/1.120/Build/Cesium/"
+  ];
+  function loadCesium(i) {
+    if (i >= BASES.length) { $("loadErr").style.display = "block"; return; }   // 모두 실패
+    window.CESIUM_BASE_URL = BASES[i];
+    const css = document.createElement("link");
+    css.rel = "stylesheet"; css.href = BASES[i] + "Widgets/widgets.css";
+    document.head.appendChild(css);
+    const s = document.createElement("script");
+    s.src = BASES[i] + "Cesium.js";
+    s.onload = () => (window.Cesium ? main() : loadCesium(i + 1));
+    s.onerror = () => loadCesium(i + 1);
+    document.head.appendChild(s);
+  }
+  loadCesium(0);
+
+  // ===== 지도와 시뮬레이션 본체 (Cesium 로드 후 실행) =====
+  function main() {
+
+  // ===== 3D 지도 생성 (토큰 없이 OSM 지도 사용) =====
+  const viewer = new Cesium.Viewer("cesium", {
+    baseLayer: new Cesium.ImageryLayer(new Cesium.OpenStreetMapImageryProvider({ url: "https://tile.openstreetmap.org/" })),
+    baseLayerPicker: false, geocoder: false, homeButton: false, sceneModePicker: false,
+    navigationHelpButton: false, animation: false, timeline: false, fullscreenButton: false,
+    infoBox: false, selectionIndicator: false, shouldAnimate: true
+  });
+
+  // ===== 시나리오 정의 (모두 서울권, 값은 가상) =====
+  const SCEN = {
+    // 강남역 일대: 고층 건물 외벽에 걸린 상황
+    city: {
+      name: "빌딩 숲 · 강남", center: [127.0276, 37.4979],
+      lon: 127.0276 + 0.00024, lat: 37.4979, agl: 124, groundMSL: 28, phase: "stuck",
+      status: "고층 건물 외벽에 걸려 있음 (지상에서는 보이지 않을 수 있음)",
+      cam: { heading: -35, pitch: -18, range: 280 },
+      cluster: { spread: 330, step: 62, maxH: 130, tower: { w: 40, h: 180 } }
+    },
+    // 여의도 상공: 체공하다 추락하는 상황
+    fall: {
+      name: "한강 상공 추락 · 여의도", center: [126.9263, 37.5253],
+      lon: 126.9263, lat: 37.5253, agl: 260, groundMSL: 8, phase: "hover",
+      status: "",
+      cam: { heading: 25, pitch: -12, range: 520 },
+      cluster: { spread: 420, step: 95, maxH: 190, tower: null }
+    },
+    // 북한산 백운대 부근: 접근 어려운 산악 지형
+    mountain: {
+      name: "산악 능선 · 북한산", center: [126.9779, 37.6591],
+      lon: 126.9779, lat: 37.6591, agl: 12, groundMSL: 836, phase: "stuck",
+      status: "능선 절벽 부근에 걸려 있음 (시야 차단, 접근 어려움)",
+      cam: { heading: 200, pitch: -22, range: 380 },
+      cluster: null
+    }
+  };
+
+  // ===== 현재 상태 =====
+  const S = { lon: 0, lat: 0, agl: 0, groundMSL: 0, jx: 0, jy: 0, jz: 0, vz: 0, phase: "stuck", t: 0 };
+  let cur = "city";        // 현재 시나리오
+  let mode3d = true;       // true: 3D 초정밀, false: 기존 2D GPS
+  let sentAt = null;       // 구조 요청을 보낸 시각
+  let realMode = false;    // 실제 지형·건물 사용 여부
+  let bldgs = [];          // 가상 건물 엔티티 목록
+  let lastNoise = 0, lastPanel = 0, lastTick = performance.now();
+
+  // 지면 높이 (실제 지형이 켜져 있으면 지형 높이, 아니면 0)
+  function groundH() {
+    const h = viewer.scene.globe.getHeight(Cesium.Cartographic.fromDegrees(S.lon, S.lat));
+    return h === undefined ? 0 : h;
+  }
+  // 현재 위치(오차 흔들림 포함)
+  const posCb = new Cesium.CallbackProperty(
+    () => Cesium.Cartesian3.fromDegrees(S.lon + S.jx, S.lat + S.jy, groundH() + S.agl + S.jz), false);
+
+  // ===== 엔티티: 3D 위치 점, 라벨, 낙하선, 정확도 타원체 =====
+  const pt3d = viewer.entities.add({
+    position: posCb,
+    point: { pixelSize: new Cesium.CallbackProperty(() => 13 + 4 * Math.sin(performance.now() / 160), false),
+             color: Cesium.Color.RED, outlineColor: Cesium.Color.WHITE, outlineWidth: 2,
+             disableDepthTestDistance: Number.POSITIVE_INFINITY },
+    label: { text: new Cesium.CallbackProperty(() => "Z " + (S.groundMSL + S.agl + S.jz).toFixed(1) + " m", false),
+             font: "bold 14px sans-serif", fillColor: Cesium.Color.WHITE, showBackground: true,
+             backgroundColor: Cesium.Color.fromCssColorString("#c0392b"),
+             pixelOffset: new Cesium.Cartesian2(0, -28), disableDepthTestDistance: Number.POSITIVE_INFINITY }
+  });
+  const dropLine = viewer.entities.add({
+    polyline: {
+      positions: new Cesium.CallbackProperty(() => [
+        Cesium.Cartesian3.fromDegrees(S.lon, S.lat, groundH()),
+        Cesium.Cartesian3.fromDegrees(S.lon, S.lat, groundH() + S.agl)], false),
+      width: 3, material: new Cesium.PolylineDashMaterialProperty({ color: Cesium.Color.YELLOW })
+    }
+  });
+  const ellip = viewer.entities.add({
+    position: posCb,
+    // 정확도 범위(±3m, ±3m, ±5m)를 눈에 보이도록 4배 확대해서 표시
+    ellipsoid: { radii: new Cesium.Cartesian3(12, 12, 20),
+                 material: Cesium.Color.RED.withAlpha(0.22), outline: true, outlineColor: Cesium.Color.RED.withAlpha(0.7) }
+  });
+
+  // ===== 엔티티: 기존 2D GPS가 보여 주는 지상 위치와 수색 반경 =====
+  const gMark = viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(0, 0),
+    point: { pixelSize: 11, color: Cesium.Color.DODGERBLUE, outlineColor: Cesium.Color.WHITE, outlineWidth: 2,
+             heightReference: Cesium.HeightReference.CLAMP_TO_GROUND, disableDepthTestDistance: Number.POSITIVE_INFINITY },
+    label: { text: "2D GPS가 알려 주는 위치 (지상)", font: "12px sans-serif", fillColor: Cesium.Color.WHITE,
+             showBackground: true, backgroundColor: Cesium.Color.fromCssColorString("#1d5fa8"),
+             pixelOffset: new Cesium.Cartesian2(0, 20), heightReference: Cesium.HeightReference.CLAMP_TO_GROUND,
+             disableDepthTestDistance: Number.POSITIVE_INFINITY }
+  });
+  const gCircle = viewer.entities.add({
+    position: Cesium.Cartesian3.fromDegrees(0, 0),
+    ellipse: { semiMajorAxis: 15, semiMinorAxis: 15, material: Cesium.Color.DODGERBLUE.withAlpha(0.3) }
+  });
+
+  // ===== 가상 건물 만들기 =====
+  function rnd(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; } // 고정 난수
+  function addBox(lon, lat, w, d, h) {
+    const e = viewer.entities.add({
+      position: Cesium.Cartesian3.fromDegrees(lon, lat, h / 2),
+      box: { dimensions: new Cesium.Cartesian3(w, d, h), heightReference: Cesium.HeightReference.RELATIVE_TO_GROUND,
+             material: Cesium.Color.fromHsl(0.6, 0.12, Math.min(0.8, 0.4 + h / 420)).withAlpha(0.9),
+             outline: true, outlineColor: Cesium.Color.BLACK.withAlpha(0.35) },
+      show: !realMode
+    });
+    bldgs.push(e);
+  }
+  function buildCluster(sc) {
+    bldgs.forEach((e) => viewer.entities.remove(e)); bldgs = [];
+    if (!sc.cluster) return;
+    const c = sc.cluster, r = rnd(7);
+    const mLat = 1 / 111320, mLon = 1 / (111320 * Math.cos(sc.center[1] * Math.PI / 180));
+    for (let x = -c.spread; x <= c.spread; x += c.step) {
+      for (let y = -c.spread; y <= c.spread; y += c.step) {
+        if (Math.hypot(x, y) < (c.tower ? 55 : 40) || r() < 0.25) continue;   // 중심부와 일부 빈 칸은 비움
+        addBox(sc.center[0] + x * mLon, sc.center[1] + y * mLat, 22 + r() * 22, 22 + r() * 22, 20 + r() * c.maxH);
+      }
+    }
+    if (c.tower) addBox(sc.center[0], sc.center[1], c.tower.w, c.tower.w, c.tower.h);  // 사고가 난 높은 건물
+  }
+
+  // ===== 시나리오 적용 =====
+  function setScenario(key) {
+    cur = key; const sc = SCEN[key];
+    Object.assign(S, { lon: sc.lon, lat: sc.lat, agl: sc.agl, groundMSL: sc.groundMSL, phase: sc.phase, vz: 0, t: 0, jx: 0, jy: 0, jz: 0 });
+    sentAt = null; $("sosBtn").classList.remove("sent"); $("sosBtn").textContent = "🆘 사고 발생 · 구조대에 3D 좌표 전송";
+    $("sosMsg").value = ""; $("sosTimer").textContent = "";
+    gMark.position = Cesium.Cartesian3.fromDegrees(sc.lon, sc.lat);
+    gCircle.position = Cesium.Cartesian3.fromDegrees(sc.lon, sc.lat);
+    buildCluster(sc);
+    document.querySelectorAll("[data-sc]").forEach((b) => b.classList.toggle("on", b.dataset.sc === key));
+    flyTo();
+    updatePanel();
+  }
+  function flyTo() {
+    const sc = SCEN[cur];
+    const c = Cesium.Cartesian3.fromDegrees(sc.lon, sc.lat, groundH() + Math.max(S.agl, 10) * 0.5);
+    viewer.camera.flyToBoundingSphere(new Cesium.BoundingSphere(c, 20), {
+      duration: 1.8,
+      offset: new Cesium.HeadingPitchRange(Cesium.Math.toRadians(sc.cam.heading), Cesium.Math.toRadians(sc.cam.pitch), sc.cam.range)
+    });
+  }
+  document.querySelectorAll("[data-sc]").forEach((b) => (b.onclick = () => setScenario(b.dataset.sc)));
+
+  // ===== 2D / 3D 보기 전환 =====
+  function setMode(is3d) {
+    mode3d = is3d;
+    [pt3d, dropLine, ellip].forEach((e) => (e.show = is3d));
+    $("m3d").classList.toggle("on", is3d); $("m2d").classList.toggle("on", !is3d);
+  }
+  $("m3d").onclick = () => setMode(true);
+  $("m2d").onclick = () => setMode(false);
+
+  // ===== 구조 요청 =====
+  $("sosBtn").onclick = () => {
+    if (sentAt) return;
+    sentAt = performance.now();
+    $("sosBtn").classList.add("sent"); $("sosBtn").textContent = "✅ 구조대에 전송됨 (실시간 갱신 중)";
+    updatePanel(true);
+  };
+  $("copyBtn").onclick = async () => {
+    try { await navigator.clipboard.writeText($("sosMsg").value); $("copyBtn").textContent = "✔ 복사됨"; }
+    catch (e) { $("sosMsg").select(); $("copyBtn").textContent = "직접 복사해 주세요"; }
+    setTimeout(() => ($("copyBtn").textContent = "📋 복사"), 1500);
+  };
+
+  // ===== 패널 갱신 =====
+  function statusText() {
+    if (S.phase === "hover") return "🟡 체공 중 — 고도 유지 중, 이상 감지";
+    if (S.phase === "fall") return "🔴 추락 중 — 수직 속도 " + S.vz.toFixed(1) + " m/s";
+    if (S.phase === "landed") return "⚫ 지면 도달 — 위치 고정";
+    return "🟠 " + SCEN[cur].status;
+  }
+  function updatePanel(force) {
+    const msl = S.groundMSL + S.agl + S.jz;
+    const lat = S.lat + S.jy, lon = S.lon + S.jx;
+    $("vLat").textContent = lat.toFixed(6) + "°";
+    $("vLon").textContent = lon.toFixed(6) + "°";
+    $("vAlt").textContent = msl.toFixed(1) + " m";
+    $("vAgl").textContent = S.agl.toFixed(1) + " m";
+    $("vVz").textContent = (S.phase === "fall" ? "-" : "") + S.vz.toFixed(1) + " m/s";
+    $("vStat").textContent = statusText();
+
+    // 수색 후보 공간 비교: 2D는 반경 15m 원기둥(높이 전체), 3D는 ±3·3·5m 타원체
+    const h = Math.max(S.agl, 5);
+    const vol2D = Math.PI * 15 * 15 * h;
+    const vol3D = (4 / 3) * Math.PI * 3 * 3 * 5;
+    const ratio = vol2D / vol3D;
+    $("ratio").textContent = Math.round(ratio) + "배";
+    $("bar3d").style.width = Math.max(1.5, 100 / ratio) + "%";
+
+    // 건물 시나리오는 층수로 설명 (층당 2분 수색한다고 가정)
+    if (cur === "city") {
+      const floors = Math.round(S.agl / 3.5);
+      $("cityTime").textContent = "가정: 층당 2분 수색 → 2D 최대 약 " + floors * 2 + "분 / 3D 약 2분 (" + floors + "층 특정)";
+    } else if (cur === "fall") {
+      $("cityTime").textContent = "추락 중에는 고도가 계속 변해, 2D 위치만으로는 낙하 지점을 예측하기 어렵습니다.";
+    } else {
+      $("cityTime").textContent = "산악 지대는 지상 거리와 실제 이동 거리가 달라, 고도 정보가 접근 경로 판단에 필요합니다.";
+    }
+
+    // 구조대 전달 메시지 (전송 후 실시간 갱신)
+    if (sentAt) {
+      const sec = ((performance.now() - sentAt) / 1000).toFixed(1);
+      $("sosTimer").textContent = "전송 후 " + sec + "초 · 수신 확인(가상)";
+      $("sosMsg").value =
+        "[3D 구조요청] " + SCEN[cur].name + "\n" +
+        "위도(Y) " + lat.toFixed(6) + " / 경도(X) " + lon.toFixed(6) + "\n" +
+        "고도(Z) 해발 " + msl.toFixed(1) + "m · 지상고 " + S.agl.toFixed(1) + "m" +
+        (cur === "city" ? " (약 " + Math.round(S.agl / 3.5) + "층)" : "") + "\n" +
+        "정확도 ±3m(수평) ±5m(수직) · " + statusText().replace(/^\S+\s/, "");
+    }
+  }
+
+  // ===== 매 프레임: 상태 변화와 센서 오차 흔들림 =====
+  viewer.clock.onTick.addEventListener(() => {
+    const now = performance.now(), dt = Math.min((now - lastTick) / 1000, 0.1); lastTick = now;
+    S.t += dt;
+
+    if (S.phase === "hover" && S.t > 3) { S.phase = "fall"; S.vz = 0; }          // 3초 체공 후 추락 시작
+    if (S.phase === "fall") {
+      S.vz = Math.min(S.vz + 9.8 * dt, 45);                                       // 중력 가속, 최대 45m/s
+      S.agl -= S.vz * dt;
+      if (S.agl <= 0) { S.agl = 0; S.vz = 0; S.phase = "landed"; }
+    }
+
+    // 센서 오차: 0.5초마다 아주 작게 흔들림 (±0.3m)
+    if (now - lastNoise > 500 && S.phase !== "landed") {
+      lastNoise = now;
+      S.jx = (Math.random() - 0.5) * 0.6 / (111320 * Math.cos(S.lat * Math.PI / 180));
+      S.jy = (Math.random() - 0.5) * 0.6 / 111320;
+      S.jz = (Math.random() - 0.5) * 0.8;
+    }
+    if (now - lastPanel > 120) { lastPanel = now; updatePanel(); }
+  });
+
+  // ===== (선택) 실제 지형·건물: Cesium Ion 토큰 =====
+  $("tokenBtn").onclick = async () => {
+    const t = $("token").value.trim(), msg = $("tokenMsg");
+    if (!t) { msg.textContent = "토큰을 입력해 주세요."; return; }
+    msg.textContent = "불러오는 중...";
+    try {
+      Cesium.Ion.defaultAccessToken = t;
+      viewer.terrainProvider = await Cesium.createWorldTerrainAsync();            // 실제 지형
+      viewer.scene.globe.depthTestAgainstTerrain = true;
+      viewer.scene.primitives.add(await Cesium.createOsmBuildingsAsync());        // 실제 건물
+      realMode = true; bldgs.forEach((e) => (e.show = false));                    // 가상 건물 숨김
+      msg.textContent = "✅ 적용됨: 실제 지형과 건물이 표시됩니다. (가상 건물은 숨김)";
+      setTimeout(flyTo, 1500);
+    } catch (e) { msg.textContent = "❌ 적용 실패: " + e.message; }
+  };
+
+  // ===== 시작 =====
+  setScenario("city");
+  } // main 끝
+</script>
+</body>
+</html>
