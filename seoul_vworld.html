@@ -210,6 +210,14 @@
   #controls button { white-space:nowrap; }
   body.compact #controls { gap:calc(6px * var(--k)); padding:calc(6px * var(--k)) calc(8px * var(--k)); } body.compact #controls button { padding:calc(7px * var(--k)) calc(9px * var(--k)); font-size:calc(13px * var(--k)); }
   body.compact #tlabel { min-width:0; font-size:calc(12px * var(--k)); }
+  /* 휴대폰 안내: PC 화면 기준으로 만든 페이지라 지도를 불러오기 전에 먼저 알린다 */
+  body.mobile-wait > :not(#mobileNote) { display:none !important; }   /* 안내 중에는 PC용 패널을 숨겨 화면 폭이 넓어지지 않게 함 */
+  #mobileNote { position:fixed; inset:0; z-index:99999; display:flex; align-items:center; justify-content:center; padding:16px; background:#0b1630; }
+  #mobileNote .box { max-width:420px; padding:24px 22px; text-align:center; line-height:1.6; }
+  #mobileNote b { display:block; font-size:20px; color:var(--accent); margin-bottom:8px; }
+  #mobileNote p { margin:0 0 16px; font-size:14px; color:#e8eefc; }
+  #mobileNote a { color:#9cc3ff; }
+  #mobileNote button { font:inherit; font-size:14px; padding:9px 16px; border-radius:10px; border:1px solid rgba(255,255,255,.3); background:transparent; color:#fff; }
 </style>
 </head>
 <body>
@@ -1188,7 +1196,19 @@
   })();
   setScenario(0, false);                                                            // 기본값: 평시 (프리로드가 끝나면 자동 재생)
 
-  boot();
+  // 휴대폰·태블릿(터치 위주이고 화면 짧은 변이 900px 미만)이면 3D 지도를 바로 불러오지 않고 안내를 먼저 띄운다
+  const isMobile = matchMedia("(pointer: coarse)").matches && Math.min(screen.width, screen.height) < 900;
+  if (isMobile) {
+    const note = document.createElement("div"); note.id = "mobileNote";
+    note.innerHTML = '<div class="box glass"><b>PC 크롬에서 봐 주세요</b>'
+      + '<p>서울 3D 지도와 119 상황실 화면을 PC 큰 화면(1920×1080) 기준으로 만들었습니다. 휴대폰에서는 패널이 겹치고 지도가 느리거나 멈출 수 있습니다.<br><br>'
+      + '설명과 화면은 <a href="https://github.com/lc-moon/26_2_Hackathon">GitHub 저장소</a>에서 볼 수 있습니다.</p>'
+      + '<button id="mobileGo">그래도 열기</button></div>';
+    document.body.appendChild(note); document.body.classList.add("mobile-wait");
+    byId("mobileGo").onclick = () => { note.remove(); document.body.classList.remove("mobile-wait"); fitUI(); boot(); };
+  } else {
+    boot();
+  }
 </script>
 </body>
 </html>
