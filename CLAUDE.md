@@ -11,10 +11,10 @@
 
 ## 반드시 지킬 것
 
-- **최종본은 `seoul_vworld.html` 하나다.** 대회 때는 서버의 `/www/team6/index.html`로 올렸고, 지금 그 배포본은 내려갔다. 고치기 전에 `archive/seoul_vworld.v_이름.html`로 백업한다
+- **최종본은 `seoul_vworld.html` 하나다.** 대회 때는 서버의 `/www/team6/index.html`로 올렸고 그 배포본은 내려갔다. 지금은 `main`에 올리면 GitHub Pages(https://lc-moon.github.io/26_2_Hackathon/)에 자동 배포된다(`.github/workflows/pages.yml`, `docs/운영.md` §2). 고치기 전에 `archive/seoul_vworld.v_이름.html`로 백업한다
 - 이 파일은 3D 모델 두 개가 base64로 한 줄에 들어 있어 `Edit` 도구로 고치기 어렵다. 파이썬 치환 스크립트로 고치고, 치환할 문자열이 정확히 한 번 나오는지 확인한다. 한 줄 끝에 주석을 달지 않는다(뒤 코드가 주석이 된다)
 - **모든 수치와 상황은 발표용 가정**이다. 새 숫자를 넣을 때 "(가정)"을 붙인다
-- `VWORLD_KEY`에는 자리표시 `YOUR_VWORLD_API_KEY`를 그대로 둔다(실제 값을 커밋하지 않는다)
+- `VWORLD_KEY`에는 자리표시 `YOUR_VWORLD_API_KEY`를 그대로 둔다(실제 값을 커밋하지 않는다). 배포 때는 저장소 Secret `VWORLD_KEY`로 바꿔 끼운다
 - 서버 접속 정보(FTP)는 **저장소에 적지 않는다.** 서버에 올릴 때는 올릴 파일만 따로 만든 폴더에서 올리고 `/www/team6/` 안에서만 작업한다
 - `발표자료/`(대본, 슬라이드 제작 프롬프트, 팀원 초안)는 저장소에 올리지 않는다(`.gitignore`). 팀원 이름은 문서에 쓰지 않는다(팀명과 팀장만)
 - 3D 모델은 CC BY 4.0이다. 화면 하단과 발표자료에 출처를 유지한다

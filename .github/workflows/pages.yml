@@ -1,0 +1,41 @@
+# main에 올리면 seoul_vworld.html을 GitHub Pages에 index.html로 배포한다.
+# 저장소에는 키 자리표시(YOUR_VWORLD_API_KEY)만 두고, 배포할 때 저장소 Secret VWORLD_KEY로 바꿔 끼운다.
+# 배포 주소: https://lc-moon.github.io/26_2_Hackathon/
+name: GitHub Pages 배포
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:        # Actions 탭에서 손으로 다시 돌릴 수 있게
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 올릴 파일만 모으고 브이월드 키 넣기
+        env:
+          VWORLD_KEY: ${{ secrets.VWORLD_KEY }}
+        run: |
+          test -n "$VWORLD_KEY" || { echo "저장소 Secret VWORLD_KEY가 없습니다"; exit 1; }
+          test "$(grep -o YOUR_VWORLD_API_KEY seoul_vworld.html | wc -l)" = 1 || { echo "키 자리표시가 정확히 한 번 있어야 합니다"; exit 1; }
+          mkdir _site
+          sed "s/YOUR_VWORLD_API_KEY/$VWORLD_KEY/" seoul_vworld.html > _site/index.html
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+      - id: deployment
+        uses: actions/deploy-pages@v4
